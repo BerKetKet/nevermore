@@ -24,6 +24,19 @@ purge_legacy() {
         rm -f "$legacy_desktop"
         echo "✓ Removed legacy desktop entry: $legacy_desktop"
     fi
+
+    # Unregister legacy desktop shortcut if present
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c '
+try:
+    import gi
+    from gi.repository import Gio, GLib
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    bus.call_sync("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel", "unregister", GLib.Variant("(ss)", ("toggle-raven.desktop", "_launch")), None, Gio.DBusCallFlags.NONE, 1000, None)
+except Exception:
+    pass
+' 2>/dev/null || true
+    fi
 }
 
 install_helper_files() {
@@ -56,6 +69,23 @@ EOF
 
     if command -v kbuildsycoca6 >/dev/null 2>&1; then
         kbuildsycoca6 >/dev/null 2>&1 || true
+    fi
+
+    # Register global shortcut Meta+N via org.kde.kglobalaccel D-Bus
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c '
+try:
+    import gi
+    from gi.repository import Gio, GLib
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    action_id = ["toggle-nevermore.desktop", "_launch", "Toggle Nevermore Control Center", "Toggle Nevermore Control Center"]
+    bus.call_sync("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel", "doRegister", GLib.Variant("(as)", (action_id,)), None, Gio.DBusCallFlags.NONE, 1000, None)
+    # Qt::MetaModifier (0x10000000 = 268435456) + Key_N (0x4e = 78) = 268435534
+    bus.call_sync("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel", "setShortcutKeys", GLib.Variant("(asa(ai)u)", (action_id, [([268435534],)], 2)), None, Gio.DBusCallFlags.NONE, 1000, None)
+    print("✓ Registered global shortcut Meta+N via org.kde.kglobalaccel")
+except Exception:
+    print("Notice: Automated global shortcut registration skipped (configure Meta+N in System Settings -> Shortcuts).")
+' 2>/dev/null || true
     fi
 }
 
@@ -90,6 +120,20 @@ case "$MODE" in
         if [ -f "$APP_DIR/toggle-nevermore.desktop" ] || [ -L "$APP_DIR/toggle-nevermore.desktop" ]; then
             rm -f "$APP_DIR/toggle-nevermore.desktop"
             echo "✓ Removed $APP_DIR/toggle-nevermore.desktop"
+        fi
+
+        # Unregister global shortcut via org.kde.kglobalaccel D-Bus
+        if command -v python3 >/dev/null 2>&1; then
+            python3 -c '
+try:
+    import gi
+    from gi.repository import Gio, GLib
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    bus.call_sync("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel", "unregister", GLib.Variant("(ss)", ("toggle-nevermore.desktop", "_launch")), None, Gio.DBusCallFlags.NONE, 1000, None)
+    print("✓ Unregistered global shortcut via org.kde.kglobalaccel")
+except Exception:
+    pass
+' 2>/dev/null || true
         fi
 
         if command -v kbuildsycoca6 >/dev/null 2>&1; then
