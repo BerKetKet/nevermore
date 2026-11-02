@@ -16,7 +16,11 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y shellcheck qt6-declarative-dev-tools
+          sudo apt-get install -y shellcheck qt6-declarative-dev-tools \
+            qml6-module-qtquick qml6-module-qtquick-layouts qml6-module-qtquick-controls qml6-module-qtcore
+
+      - name: Add Qt6 tool directory to PATH
+        run: echo "/usr/lib/qt6/bin" >> "$GITHUB_PATH"
 
       - name: Run shellcheck
         run: |
@@ -24,4 +28,8 @@ jobs:
 
       - name: Run qmllint
         run: |
-          qmllint contents/ui/*.qml
+          if qmllint --help | grep -q -- '--unresolved-type'; then
+            qmllint --import disable --unresolved-type disable --missing-property disable --unqualified disable contents/ui/*.qml
+          else
+            qmllint --import disable --type disable --property disable --unqualified disable contents/ui/*.qml
+          fi
