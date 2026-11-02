@@ -65,6 +65,7 @@ Rectangle {
                 clip: true
 
                 Image {
+                    id: albumArt
                     anchors.fill: parent
                     source: mediaRoot.artUrl
                     fillMode: Image.PreserveAspectCrop
@@ -77,7 +78,7 @@ Rectangle {
                     implicitWidth: 26
                     implicitHeight: 26
                     color: Qt.rgba(1, 1, 1, 0.5)
-                    visible: !mediaRoot.artUrl || parent.children[0].status !== Image.Ready
+                    visible: !mediaRoot.artUrl || albumArt.status !== Image.Ready
                 }
             }
 
