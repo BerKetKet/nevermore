@@ -20,7 +20,7 @@ PlasmoidItem {
     property int activeTab: 0 // 0: Widgets, 1: Notifications, 2: Terminal
 
     fullRepresentation: Rectangle {
-        id: ravenPanel
+        id: controlCenterPanel
         Layout.minimumWidth: 360
         Layout.preferredWidth: 380
         Layout.maximumWidth: 420
