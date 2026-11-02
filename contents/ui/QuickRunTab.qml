@@ -80,16 +80,17 @@ Item {
 
     readonly property var activeTab: (terminalTabs && terminalTabs.length > activeTabIndex) ? terminalTabs[activeTabIndex] : null
 
-    // Background Tasks State
+    // Background Tasks State & Measured Polling Gating
     property var bgTasks: []
     property bool tasksExpanded: false
-    readonly property bool isActuallyVisible: visible && (Window.window ? (Window.window.visible && Window.window.visibility !== Window.Hidden) : true)
+    property bool hasRunningTasks: false
+    readonly property bool shouldPollTasks: (termRoot.visible && termRoot.tasksExpanded) || hasRunningTasks
 
     Timer {
         id: taskPollTimer
-        interval: 3000
+        interval: termRoot.hasRunningTasks ? 3000 : 5000
         repeat: true
-        running: termRoot.isActuallyVisible
+        running: termRoot.shouldPollTasks
         onTriggered: termRoot.pollTasks()
     }
 
@@ -100,8 +101,14 @@ Item {
         onTriggered: termRoot.pollTasks()
     }
 
-    onIsActuallyVisibleChanged: {
-        if (isActuallyVisible) {
+    onTasksExpandedChanged: {
+        if (tasksExpanded) {
+            termRoot.pollTasks();
+        }
+    }
+
+    onVisibleChanged: {
+        if (visible && tasksExpanded) {
             termRoot.pollTasks();
         }
     }
@@ -247,14 +254,74 @@ Item {
             try {
                 let parsed = JSON.parse(out);
                 if (Array.isArray(parsed)) {
-                    termRoot.bgTasks = parsed;
-                    if (parsed.length > 0 && !termRoot.tasksExpanded) {
-                        termRoot.tasksExpanded = true;
+                    let validList = [];
+                    let anyRunning = false;
+                    for (let i = 0; i < parsed.length; i++) {
+                        let item = parsed[i];
+                        if (termRoot.isValidUnitName(item.unit)) {
+                            let category = "other";
+                            if (item.sub === "running") {
+                                category = "running";
+                                anyRunning = true;
+                            } else if (item.active === "failed" || item.sub === "failed") {
+                                category = "failed";
+                            } else if (item.sub === "exited") {
+                                category = "exited";
+                            } else {
+                                category = item.sub || item.active || "other";
+                            }
+                            item.statusCategory = category;
+                            validList.push(item);
+                        }
+                    }
+                    termRoot.hasRunningTasks = anyRunning;
+                    termRoot.bgTasks = validList;
+
+                    if (validList.length > 0) {
+                        taskShowEngine.connectSource("systemctl --user show \"nevermore-task-*\" --property=Id,ExecMainStatus");
                     }
                 }
             } catch (e) {
                 // Not JSON or parse error
             }
+        }
+    }
+
+    // Tasks Exit Code Detail Engine
+    Plasma5Support.DataSource {
+        id: taskShowEngine
+        engine: "executable"
+        connectedSources: []
+
+        onNewData: (source, data) => {
+            disconnectSource(source);
+            let out = (data["stdout"] || "").trim();
+            if (out.length === 0) return;
+
+            let statusMap = {};
+            let lines = out.split("\n");
+            let currentId = "";
+
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i].trim();
+                if (line.startsWith("Id=")) {
+                    currentId = line.substring(3).trim();
+                } else if (line.startsWith("ExecMainStatus=") && currentId !== "") {
+                    let st = parseInt(line.substring(15).trim(), 10);
+                    if (!isNaN(st)) {
+                        statusMap[currentId] = st;
+                    }
+                }
+            }
+
+            let tasks = termRoot.bgTasks.slice();
+            for (let j = 0; j < tasks.length; j++) {
+                let u = tasks[j].unit;
+                if (statusMap[u] !== undefined) {
+                    tasks[j].execStatus = statusMap[u];
+                }
+            }
+            termRoot.bgTasks = tasks;
         }
     }
 
@@ -398,18 +465,30 @@ Item {
         clipEngine.connectSource("wl-paste");
     }
 
+    function isValidUnitName(unit) {
+        if (!unit || typeof unit !== "string") return false;
+        return /^nevermore-task-[0-9]+\.service$/.test(unit);
+    }
+
     function pollTasks() {
-        taskPollEngine.connectSource("systemctl --user list-units \"nevermore-task-*\" --output=json");
+        taskPollEngine.connectSource("systemctl --user list-units \"nevermore-task-*\" --all --output=json");
     }
 
     function viewTaskLogs(unit) {
-        if (!unit) return;
-        taskActionEngine.connectSource("journalctl --user -u " + unit + " -n 200 --no-pager");
+        if (!isValidUnitName(unit)) return;
+        taskActionEngine.connectSource("journalctl --user -u '" + unit + "' -n 200 --no-pager");
     }
 
-    function stopTask(unit) {
-        if (!unit) return;
-        helperEngine.connectSource("systemctl --user stop " + unit);
+    function stopOrDismissTask(unit, isFinished) {
+        if (!isValidUnitName(unit)) return;
+        let escaped = "'" + unit + "'";
+        let cmd = "";
+        if (isFinished) {
+            cmd = "systemctl --user stop " + escaped + " 2>/dev/null; systemctl --user reset-failed " + escaped + " 2>/dev/null";
+        } else {
+            cmd = "systemctl --user stop " + escaped;
+        }
+        helperEngine.connectSource(cmd);
         taskRefreshTimer.restart();
     }
 
@@ -902,18 +981,39 @@ Item {
                                     implicitWidth: stateTxt.implicitWidth + 8
                                     height: 16
                                     radius: 4
-                                    color: modelData.sub === "running" ? Qt.rgba(48/255, 209/255, 88/255, 0.2) : Qt.rgba(1, 1, 1, 0.1)
-                                    border.color: modelData.sub === "running" ? "#30d158" : Qt.rgba(1, 1, 1, 0.2)
+                                    color: {
+                                        if (modelData.statusCategory === "running") return Qt.rgba(48/255, 209/255, 88/255, 0.2);
+                                        if (modelData.statusCategory === "failed") return Qt.rgba(1.0, 69/255, 58/255, 0.2);
+                                        return Qt.rgba(1, 1, 1, 0.1);
+                                    }
+                                    border.color: {
+                                        if (modelData.statusCategory === "running") return "#30d158";
+                                        if (modelData.statusCategory === "failed") return "#ff453a";
+                                        return Qt.rgba(1, 1, 1, 0.2);
+                                    }
                                     border.width: 1
 
                                     Text {
                                         id: stateTxt
                                         anchors.centerIn: parent
-                                        text: modelData.sub || modelData.active || "unknown"
+                                        text: {
+                                            if (modelData.statusCategory === "running") return i18n("running");
+                                            if (modelData.statusCategory === "exited") {
+                                                return modelData.execStatus !== undefined ? i18n("done (%1)", String(modelData.execStatus)) : i18n("exited");
+                                            }
+                                            if (modelData.statusCategory === "failed") {
+                                                return modelData.execStatus !== undefined ? i18n("failed (%1)", String(modelData.execStatus)) : i18n("failed");
+                                            }
+                                            return modelData.sub || modelData.active || "unknown";
+                                        }
                                         font.family: "SF Hello"
                                         font.pixelSize: 9
                                         font.bold: true
-                                        color: modelData.sub === "running" ? "#30d158" : Qt.rgba(1, 1, 1, 0.7)
+                                        color: {
+                                            if (modelData.statusCategory === "running") return "#30d158";
+                                            if (modelData.statusCategory === "failed") return "#ff453a";
+                                            return Qt.rgba(1, 1, 1, 0.8);
+                                        }
                                     }
                                 }
 
@@ -945,23 +1045,26 @@ Item {
                                     }
                                 }
 
-                                // Stop Button
+                                // Stop / Dismiss Button
                                 Rectangle {
+                                    readonly property bool isRunningTask: modelData.statusCategory === "running"
                                     implicitWidth: stopTaskTxt.implicitWidth + 10
                                     height: 20
                                     radius: 4
-                                    color: stopTaskM.containsMouse ? Qt.rgba(1.0, 69/255, 58/255, 0.3) : Qt.rgba(1.0, 69/255, 58/255, 0.15)
-                                    border.color: "#ff453a"
+                                    color: isRunningTask
+                                           ? (stopTaskM.containsMouse ? Qt.rgba(1.0, 69/255, 58/255, 0.3) : Qt.rgba(1.0, 69/255, 58/255, 0.15))
+                                           : (stopTaskM.containsMouse ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.08))
+                                    border.color: isRunningTask ? "#ff453a" : Qt.rgba(1, 1, 1, 0.2)
                                     border.width: 1
 
                                     Text {
                                         id: stopTaskTxt
                                         anchors.centerIn: parent
-                                        text: i18n("Stop")
+                                        text: isRunningTask ? i18n("Stop") : i18n("Dismiss")
                                         font.family: "SF Hello"
                                         font.pixelSize: 9
                                         font.bold: true
-                                        color: "#ff453a"
+                                        color: isRunningTask ? "#ff453a" : Qt.rgba(1, 1, 1, 0.8)
                                     }
 
                                     MouseArea {
@@ -969,7 +1072,7 @@ Item {
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: termRoot.stopTask(modelData.unit)
+                                        onClicked: termRoot.stopOrDismissTask(modelData.unit, !parent.isRunningTask)
                                     }
                                 }
                             }

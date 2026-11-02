@@ -73,7 +73,7 @@ if [ "${1:-}" = "--bg" ]; then
     echo "Working Directory: $TARGET_DIR"
     echo ""
 
-    if systemd-run --user --unit="$UNIT_NAME" --collect --working-directory="$TARGET_DIR" bash -c "$CMD"; then
+    if systemd-run --user --unit="$UNIT_NAME" --remain-after-exit --working-directory="$TARGET_DIR" bash -c "$CMD"; then
         echo ""
         echo "✓ Task successfully submitted as systemd user unit: $UNIT_NAME.service"
         echo "To view live logs in terminal, run:"
