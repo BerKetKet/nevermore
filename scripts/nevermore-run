@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+set -u
+
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}/nevermore"
+mkdir -p "$RUNTIME_DIR"
+
+# Mode: Stop running command
+if [ "${1:-}" = "--stop" ]; then
+    SENTINEL="${2:-}"
+    if [ -z "$SENTINEL" ]; then
+        echo "Error: Sentinel required for --stop" >&2
+        exit 1
+    fi
+    PID_FILE="$RUNTIME_DIR/${SENTINEL}.pid"
+    if [ -f "$PID_FILE" ]; then
+        PGID=$(cat "$PID_FILE" 2>/dev/null || true)
+        if [ -n "$PGID" ]; then
+            kill -TERM -"$PGID" 2>/dev/null || true
+            sleep 0.1
+            kill -KILL -"$PGID" 2>/dev/null || true
+        fi
+        rm -f "$PID_FILE"
+    fi
+    exit 0
+fi
+
+# Mode: Background task via systemd-run --user
+if [ "${1:-}" = "--bg" ]; then
+    SENTINEL="${2:-}"
+    BASE64_CWD="${3:-}"
+    BASE64_CMD="${4:-}"
+
+    if [ -z "$SENTINEL" ]; then
+        echo "Error: Sentinel required for --bg" >&2
+        exit 1
+    fi
+
+    # Decode working directory
+    TARGET_DIR="$(printf '%s' "$BASE64_CWD" | base64 -d 2>/dev/null || echo "$HOME")"
+    if [ ! -d "$TARGET_DIR" ]; then
+        TARGET_DIR="$HOME"
+    fi
+
+    # Decode command
+    CMD="$(printf '%s' "$BASE64_CMD" | base64 -d 2>/dev/null || echo "")"
+    UNIT_NAME="nevermore-task-$(date +%s%N | cut -b1-13)"
+
+    echo "=== Nevermore Background Task Launcher ==="
+    echo "Starting transient systemd user service..."
+    echo "Command: $CMD"
+    echo "Working Directory: $TARGET_DIR"
+    echo ""
+
+    if systemd-run --user --unit="$UNIT_NAME" --collect --working-directory="$TARGET_DIR" bash -c "$CMD"; then
+        echo ""
+        echo "✓ Task successfully submitted as systemd user unit: $UNIT_NAME.service"
+        echo "To view live logs in terminal, run:"
+        echo "  journalctl --user -u $UNIT_NAME.service -f"
+        EXIT_CODE=0
+    else
+        echo ""
+        echo "✗ Failed to launch background unit via systemd-run." >&2
+        EXIT_CODE=1
+    fi
+
+    printf "\n%s\n%d\n%s\n" "$SENTINEL" "$EXIT_CODE" "$TARGET_DIR"
+    exit "$EXIT_CODE"
+fi
+
+# Standard Mode: One-shot command runner
+SENTINEL="${1:-}"
+BASE64_CWD="${2:-}"
+BASE64_CMD="${3:-}"
+TIMEOUT="${4:-30}"
+
+if [ -z "$SENTINEL" ]; then
+    echo "Error: Sentinel token required" >&2
+    exit 1
+fi
+
+PID_FILE="$RUNTIME_DIR/${SENTINEL}.pid"
+INFO_FILE="$RUNTIME_DIR/${SENTINEL}.info"
+
+# Decode working directory
+TARGET_DIR="$(printf '%s' "$BASE64_CWD" | base64 -d 2>/dev/null || echo "$HOME")"
+if [ ! -d "$TARGET_DIR" ]; then
+    TARGET_DIR="$HOME"
+fi
+cd "$TARGET_DIR" || cd "$HOME" || exit 1
+
+# Decode command
+CMD="$(printf '%s' "$BASE64_CMD" | base64 -d 2>/dev/null || echo "")"
+
+# Spawn in new session (setsid) so process group can be killed on demand or timeout
+# shellcheck disable=SC2016
+setsid bash -c '
+    echo "$$" > "$2"
+    eval "$1"
+    CMD_EXIT=$?
+    printf "%d\n%s" "$CMD_EXIT" "$PWD" > "$3"
+    exit "$CMD_EXIT"
+' _ "$CMD" "$PID_FILE" "$INFO_FILE" &
+CHILD_PID=$!
+
+# Monitor execution with timeout in 100ms increments
+ELAPSED=0
+MAX_TICKS=$((TIMEOUT * 10))
+TIMED_OUT=0
+
+while kill -0 "$CHILD_PID" 2>/dev/null; do
+    sleep 0.1
+    ELAPSED=$((ELAPSED + 1))
+    if [ "$ELAPSED" -ge "$MAX_TICKS" ]; then
+        TIMED_OUT=1
+        if [ -f "$PID_FILE" ]; then
+            PGID=$(cat "$PID_FILE" 2>/dev/null || true)
+            if [ -n "$PGID" ]; then
+                kill -TERM -"$PGID" 2>/dev/null || true
+                sleep 0.1
+                kill -KILL -"$PGID" 2>/dev/null || true
+            fi
+        fi
+        break
+    fi
+done
+
+wait "$CHILD_PID" 2>/dev/null || true
+
+if [ "$TIMED_OUT" -eq 1 ]; then
+    EXIT_CODE=124
+    FINAL_PWD="$PWD"
+    echo ""
+    echo "⚠️ Command timed out after ${TIMEOUT} seconds."
+elif [ -f "$INFO_FILE" ]; then
+    EXIT_CODE=$(head -n 1 "$INFO_FILE" 2>/dev/null || echo 1)
+    FINAL_PWD=$(tail -n +2 "$INFO_FILE" 2>/dev/null || echo "$PWD")
+else
+    EXIT_CODE=1
+    FINAL_PWD="$PWD"
+fi
+
+rm -f "$PID_FILE" "$INFO_FILE"
+
+# Output random sentinel marker, exit code, and final pwd for QML parser
+printf "\n%s\n%d\n%s\n" "$SENTINEL" "$EXIT_CODE" "$FINAL_PWD"
+exit "$EXIT_CODE"

@@ -20,7 +20,7 @@ jobs:
 
       - name: Run shellcheck
         run: |
-          shellcheck install.sh scripts/*.sh
+          shellcheck install.sh scripts/toggle-nevermore.sh scripts/nevermore-run
 
       - name: Run qmllint
         run: |

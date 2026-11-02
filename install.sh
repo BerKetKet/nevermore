@@ -34,6 +34,11 @@ install_helper_files() {
     chmod +x "$BIN_DIR/toggle-nevermore.sh"
     echo "✓ Installed toggle script to $BIN_DIR/toggle-nevermore.sh"
 
+    # Install runner script
+    cp "$REPO_DIR/scripts/nevermore-run" "$BIN_DIR/nevermore-run"
+    chmod +x "$BIN_DIR/nevermore-run"
+    echo "✓ Installed runner script to $BIN_DIR/nevermore-run"
+
     # Generate desktop entry with real runtime paths
     cat > "$APP_DIR/toggle-nevermore.desktop" <<EOF
 [Desktop Entry]
@@ -75,6 +80,11 @@ case "$MODE" in
         if [ -f "$BIN_DIR/toggle-nevermore.sh" ] || [ -L "$BIN_DIR/toggle-nevermore.sh" ]; then
             rm -f "$BIN_DIR/toggle-nevermore.sh"
             echo "✓ Removed $BIN_DIR/toggle-nevermore.sh"
+        fi
+
+        if [ -f "$BIN_DIR/nevermore-run" ] || [ -L "$BIN_DIR/nevermore-run" ]; then
+            rm -f "$BIN_DIR/nevermore-run"
+            echo "✓ Removed $BIN_DIR/nevermore-run"
         fi
 
         if [ -f "$APP_DIR/toggle-nevermore.desktop" ] || [ -L "$APP_DIR/toggle-nevermore.desktop" ]; then
