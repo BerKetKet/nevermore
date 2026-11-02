@@ -26,20 +26,6 @@ PlasmoidItem {
         Layout.maximumWidth: 420
         Layout.fillHeight: true
 
-        Component.onCompleted: {
-            console.warn("NEVERMORE_MEASURE: panel completed. root.visible=" + root.visible + " win=" + controlCenterPanel.Window.window + " win.vis=" + (controlCenterPanel.Window.window ? controlCenterPanel.Window.window.visible : "null") + " win.visibility=" + (controlCenterPanel.Window.window ? controlCenterPanel.Window.window.visibility : "null"));
-        }
-
-        Connections {
-            target: controlCenterPanel.Window.window
-            function onVisibleChanged() {
-                console.warn("NEVERMORE_MEASURE: onVisibleChanged -> " + (controlCenterPanel.Window.window ? controlCenterPanel.Window.window.visible : "null"));
-            }
-            function onVisibilityChanged() {
-                console.warn("NEVERMORE_MEASURE: onVisibilityChanged -> " + (controlCenterPanel.Window.window ? controlCenterPanel.Window.window.visibility : "null"));
-            }
-        }
-
         color: "#18181b"
         radius: 16
         border.color: Qt.rgba(1, 1, 1, 0.08)
