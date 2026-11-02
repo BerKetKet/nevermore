@@ -1,0 +1,27 @@
+name: Lint
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck qt6-declarative-dev-tools
+
+      - name: Run shellcheck
+        run: |
+          shellcheck install.sh scripts/*.sh
+
+      - name: Run qmllint
+        run: |
+          qmllint contents/ui/*.qml
