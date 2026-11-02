@@ -245,7 +245,7 @@ Item {
                                 implicitWidth: 14
                                 implicitHeight: 14
                                 radius: 7
-                                color: closeM.containsMouse ? Qt.rgba(255, 69, 58, 0.3) : "transparent"
+                                color: closeM.containsMouse ? Qt.rgba(1.0, 69/255, 58/255, 0.3) : "transparent"
                                 visible: termRoot.terminalTabs.length > 1
 
                                 Text {
@@ -346,7 +346,7 @@ Item {
                 implicitWidth: runTxt.implicitWidth + 20
                 height: 30
                 radius: 8
-                color: runM.containsMouse ? Qt.rgba(48, 209, 88, 0.3) : Qt.rgba(48, 209, 88, 0.15)
+                color: runM.containsMouse ? Qt.rgba(48/255, 209/255, 88/255, 0.3) : Qt.rgba(48/255, 209/255, 88/255, 0.15)
                 border.color: "#30d158"
                 border.width: 1
 
@@ -383,7 +383,7 @@ Item {
                 implicitWidth: clearTxt.implicitWidth + 20
                 height: 30
                 radius: 8
-                color: clearM.containsMouse ? Qt.rgba(255, 69, 58, 0.25) : Qt.rgba(1, 1, 1, 0.06)
+                color: clearM.containsMouse ? Qt.rgba(1.0, 69/255, 58/255, 0.25) : Qt.rgba(1, 1, 1, 0.06)
                 border.color: Qt.rgba(1, 1, 1, 0.08)
                 border.width: 1
 

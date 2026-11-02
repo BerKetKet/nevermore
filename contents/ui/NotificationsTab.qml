@@ -31,7 +31,7 @@ Item {
                 Layout.fillWidth: true
                 height: 36
                 radius: 10
-                color: notifRoot.isDnd ? Qt.rgba(191, 90, 242, 0.25) : (dndMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(1, 1, 1, 0.06))
+                color: notifRoot.isDnd ? Qt.rgba(191/255, 90/255, 242/255, 0.25) : (dndMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(1, 1, 1, 0.06))
                 border.color: notifRoot.isDnd ? "#bf5af2" : Qt.rgba(1, 1, 1, 0.08)
                 border.width: 1
 
@@ -69,7 +69,7 @@ Item {
                 implicitWidth: clearText.implicitWidth + 24
                 height: 36
                 radius: 10
-                color: clearMouse.containsMouse ? Qt.rgba(255, 69, 58, 0.25) : Qt.rgba(1, 1, 1, 0.06)
+                color: clearMouse.containsMouse ? Qt.rgba(1.0, 69/255, 58/255, 0.25) : Qt.rgba(1, 1, 1, 0.06)
                 border.color: clearMouse.containsMouse ? "#ff453a" : Qt.rgba(1, 1, 1, 0.08)
                 border.width: 1
                 visible: notifModel.count > 0
