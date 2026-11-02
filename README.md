@@ -1,90 +1,103 @@
-# 🦅 Nevermore
+# 🦅 Nevermore Control Center
 
 > *"Quoth the Raven, 'Nevermore.'"* — Edgar Allan Poe
 
-**Nevermore** is an advanced, modular, and aesthetic slide-out **Control Center** for **KDE Plasma 6 (Wayland)**. Built to transcend the limitations of sparse desktop applets, Nevermore delivers a unified, high-density dashboard inspired by Budgie's *Raven* and macOS's *Notification Center*—engineered to be **the control center to end all control centers**.
+**Nevermore** is an advanced, modular, and aesthetic slide-out **Control Center** for **KDE Plasma 6 (Wayland)**. Built to transcend the limitations of sparse desktop applets, Nevermore delivers a unified, high-density dashboard inspired by Budgie's *Raven* and macOS *Control Center*—engineered to be the definitive control center for KDE Plasma.
 
 ---
 
-## ✨ Features at a Glance
+## 📊 Feature Status Matrix
 
-### 1. 🗂️ Segmented Multi-Tab Flyout
-A clean, frosted-acrylic right-hand flyout with dedicated, instant-access tabs:
-* **`[ Widgets ]`**: Hardware telemetry, calendar, media, and sound.
-* **`[ Notifications ]`**: Actionable alert history, Do Not Disturb, and bulk clearing.
-* **`[ Terminal ]`**: Multi-session quick scratchpad & execution terminal.
-
----
-
-### 2. 📊 Widgets & System Telemetry (Inline, Zero Hovering)
-Unlike traditional panels that force applets into collapsed icon popups, Nevermore exposes high-contrast, real-time gauges inline:
-* **Interactive Month Calendar:** Complete 7x6 month grid (42 days) with previous/next month navigation, "Today" quick-jump, and vibrant current-day highlighting.
-* **CPU Load Gauge:** Live CPU utilization meter with core statistics and color-coded stress levels.
-* **RAM Telemetry:** Real-time RAM utilization bar with formatted `Used GB / Total GB` and percentages.
-* **Storage Space:** Real-time root disk capacity monitor showing free space and utilization percentages.
-* **Network Throughput:** Instant upload and download speed meters.
-* **MPRIS Media Player:** Automatically detects active media streams (YouTube, Spotify, VLC) displaying album art, song title, artist/channel, and playback controls (Prev / Play-Pause / Next).
-* **Audio Sliders:** Granular output and microphone volume controls with single-click mute switches.
-
----
-
-### 3. 🔔 Notifications Feed
-* **Full History:** Freedesktop notification aggregator with application icons, timestamps, and expandable content.
-* **Interactive Actions:** Per-alert dismissal and global **Clear All**.
-* **Do Not Disturb (DND):** Toggle DND mode directly from the header to silence incoming desktop interruptions.
-* **Unread Counter:** Real-time badge counter on the tab header.
+| Feature | Status | Notes |
+| :--- | :--- | :--- |
+| **Segmented Tab Flyout** | **Implemented** | Three dedicated tabs: Widgets, Notifications, and Run. |
+| **Interactive Calendar** | **Implemented** | Full 7x6 month grid with month navigation and current day highlight. |
+| **Overall CPU Telemetry** | **Implemented** | Aggregate CPU load percentage via `org.kde.ksysguard.sensors`. |
+| **Per-Core CPU Stats** | *Planned* | Per-core CPU load breakdown is scheduled for a future release. |
+| **RAM Telemetry** | **Implemented** | Real-time memory consumption (`Used GB / Total GB`) and percentage. |
+| **Storage Utilization** | **Implemented** | Aggregate storage utilization across mounted filesystems (`disk/all`). |
+| **Network Throughput** | **Implemented** | Real-time aggregate upload and download throughput. |
+| **MPRIS Media Controller** | **Implemented** | Player detection, album artwork, track details, and playback controls. |
+| **Audio Volume Controls** | **Implemented** | Master output and microphone volume sliders with toggle mute. |
+| **Notification Center** | **Implemented** | Aggregated notification feed with Do Not Disturb and bulk clearing. |
+| **Notification Actions** | *Partial* | Per-notification dismissal works; action buttons planned for Phase 5. |
+| **Notification Timestamps**| *Planned* | Relative timestamps ("5m ago") scheduled for Phase 5. |
+| **Expandable Notifications**| *Planned* | Collapsible long-body notification cards scheduled for Phase 5. |
+| **Command Execution Tab** | **Implemented** | One-shot command runner with exit code detection and output log. |
+| **Command History** | *Partial* | In-memory session history (cleared on plasmoid restart). |
+| **Wayland Clipboard Paste**| **Implemented** | Paste commands from Wayland clipboard (`wl-paste`) with multiline safety check. |
+| **Global Shortcut** | *Manual* | Configured manually via KDE System Settings (`Meta+N`). |
 
 ---
 
-### 4. 💻 Multi-Tab Quick Terminal
-* **Multi-Session Management:** Open concurrent terminal tabs (`Tab 1`, `Tab 2`, `+`) with individual working directories and command logs.
-* **`[ 📋 Paste & Run ]`:** Instant Wayland clipboard extraction (`wl-paste`) to paste and execute terminal commands in one click.
-* **Persistent History:** Retains session logs until explicitly cleared with the `Clear` button.
-* **Working Directory Tracking:** Tracks `cd` commands across runs so subsequent executions remain in the target directory.
+## 💻 Requirements
+
+* **KDE Plasma:** Version 6.0 or higher (tested on Plasma 6.8.2 on Wayland).
+* **Qt / Frameworks:** Qt 6.x, Kirigami 3 / KF6.
+* **Wayland Clipboard Utility:** `wl-clipboard` (provides `wl-paste` for clipboard actions).
+* **D-Bus Scripting Tools:** `qt6-tools` or `qt5-tools` (provides `qdbus6` or `qdbus` for panel toggling).
+* **System Monitoring:** `ksystemstats` (default in Plasma 6).
+* **Recommended Fonts:** System default interface font (e.g. Inter, Noto Sans) and system monospace font for code.
 
 ---
 
-### 5. 🚀 Wayland-Native Activation & Shortcuts
-* **Right Edge Slide:** Configured with Plasma's native auto-hide; hovering the right screen edge slides the panel into view.
-* **Global Shortcut:** Press **`Super + N`** (`Meta + N`, Budgie's signature shortcut) to toggle the sidebar pinned open or dismissed back to autohide.
+## 📦 Installation & Setup
 
----
-
-## 🛠️ Architecture & Tech Stack
-
-* **Platform:** KDE Plasma 6.8+ on Wayland
-* **Frontend:** QtQuick 6, Kirigami 2/6, Plasma Quick components
-* **Backend Interfaces:**
-  * System telemetry via `org.kde.ksysguard.sensors` & `ksystemstats`
-  * Media controls via DBus MPRIS (`org.kde.plasma.private.mpris`)
-  * Sound via PulseAudio / PipeWire (`org.kde.plasma.private.volume`)
-  * Notifications via `org.kde.notificationmanager`
-  * Execution engine via `Plasma5Support.DataSource` and native bash
-
----
-
-## 📦 Installation & Development
+### Regular Installation (Plasma Package)
 
 ```bash
 # Clone the repository
 git clone https://github.com/BerKetKet/nevermore.git ~/projects/nevermore
 cd ~/projects/nevermore
 
-# Run installer (symlinks plasmoid, installs scripts and shortcuts)
+# Install or upgrade via kpackagetool6
 ./install.sh
+```
+
+### Developer Mode (Live Symlink)
+
+```bash
+# Symlink directly to local source tree
+./install.sh --dev
+```
+
+### Uninstallation
+
+```bash
+# Remove plasmoid and helper files
+./install.sh --uninstall
 ```
 
 ---
 
-## 🗺️ Roadmap & Upcoming Refinements
+## ⌨️ Configuring the Global Shortcut (Meta + N)
 
-* [ ] **Terminal Architecture Redesign:** Dedicated process manager for long-running / daemon tasks (keeping background processes active and monitored out-of-the-way).
-* [ ] **Embedded PTY Terminal:** Inline interactive terminal with a live blinking cursor, raw input capture, and full shell emulation.
-* [ ] **Customizable Widget Grid:** Drag-and-drop reordering of widgets and user-toggleable cards.
-* [ ] **Quick Toggles Matrix:** Wi-Fi, Bluetooth, VPN, Night Light, and performance power profiles.
-* [ ] **Weather & Forecast Card:** Detailed hourly weather radar and temperature widget.
+To bind the **`Meta + N`** shortcut to toggle Nevermore:
+
+1. Open **System Settings** -> **Keyboard** -> **Shortcuts**.
+2. Click **Add New** -> **Command or Script** (or find **Toggle Nevermore Control Center** under Applications).
+3. Set the command to:
+   ```bash
+   ~/.local/bin/toggle-nevermore.sh
+   ```
+4. Click the shortcut button, press **`Meta + N`**, and click **Apply**.
+
+---
+
+## ⚠️ Known Issues & Technical Notes
+
+* **Disk Utilization Sensor:** Nevermore currently tracks aggregate filesystem utilization across all mounts via the sensor `disk/all/usedPercent` rather than partition-specific UUIDs, ensuring compatibility across differing partition setups.
+* **Global Shortcut Registration:** Plasma 6 Wayland requires explicit user authorization in System Settings for custom command shortcuts; automated registration via background scripts is not durable across sessions.
+* **Command Persistence:** Command runner history is currently maintained in memory during the active session. If plasmashell restarts, command runner tabs and history reset to the default workspace.
+
+---
+
+## 🗺️ Roadmap
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed phase breakdowns and upcoming milestones.
 
 ---
 
 ## 📜 License
-GPLv3 License. Inspired by the Buddies of Budgie Raven sidebar and macOS design principles.
+
+Licensed under the **GNU General Public License v3.0 or later** ([GPL-3.0-or-later](LICENSE)).
