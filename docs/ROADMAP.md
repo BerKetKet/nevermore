@@ -12,7 +12,7 @@ This document outlines the structured development phases and architectural roadm
 - Refactor helper scripts (`toggle-nevermore.sh`) with robust `qdbus6`/`qdbus` detection.
 - Overhaul `install.sh` supporting package installation (`kpackagetool6`), developer symlinking (`--dev`), and uninstallation (`--uninstall`).
 - Honest README audit and documentation of manual shortcut registration.
-- Continuous Integration via GitHub Actions running `shellcheck` and `qmllint`.
+- Continuous Integration via GitHub Actions running `shellcheck` and `qmllint` (syntax, scoping, and structural verification without module type resolution).
 
 ### Phase 1: Correctness Fixes
 - Correct `Qt.rgba` calls to ensure channel values remain strictly within the standard `[0.0, 1.0]` range.
@@ -56,5 +56,6 @@ This document outlines the structured development phases and architectural roadm
 
 ## Deferred / Dropped Features
 
+- **Real qmllint with KDE Module Stubs:** In CI runners without KDE Plasma/KF6 packages installed, `qmllint` must run with `--unresolved-type disable --missing-property disable`. Providing offline mock type stubs or dummy `qmldir` modules for `org.kde.*` in CI to enable full semantic verification is slated for a future tooling update.
 - **Embedded PTY Terminal:** Dropped in favor of the lightweight Quick Run runner and external Konsole integration. Full PTY emulation within QML introduces unnecessary complexity, security hazards, and rendering inefficiencies.
 - **Weather & Forecast Card:** Deferred pending evaluation of lightweight, zero-key public weather APIs.
