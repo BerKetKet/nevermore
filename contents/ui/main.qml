@@ -72,7 +72,7 @@ PlasmoidItem {
             // --- Dual Segmented Tabs (Widgets vs Notifications) ---
             Rectangle {
                 Layout.fillWidth: true
-                height: 38
+                implicitHeight: 38
                 radius: 10
                 color: Qt.rgba(1, 1, 1, 0.06)
                 border.color: Qt.rgba(1, 1, 1, 0.08)

@@ -160,7 +160,7 @@ Rectangle {
             // CPU Bar
             Rectangle {
                 Layout.fillWidth: true
-                height: 7
+                implicitHeight: 7
                 radius: 4
                 color: Qt.rgba(1, 1, 1, 0.1)
 
@@ -207,7 +207,7 @@ Rectangle {
             // RAM Bar
             Rectangle {
                 Layout.fillWidth: true
-                height: 7
+                implicitHeight: 7
                 radius: 4
                 color: Qt.rgba(1, 1, 1, 0.1)
 
@@ -254,7 +254,7 @@ Rectangle {
             // Disk Bar
             Rectangle {
                 Layout.fillWidth: true
-                height: 7
+                implicitHeight: 7
                 radius: 4
                 color: Qt.rgba(1, 1, 1, 0.1)
 
@@ -271,7 +271,7 @@ Rectangle {
         // --- Network Activity ---
         Rectangle {
             Layout.fillWidth: true
-            height: 30
+            implicitHeight: 30
             radius: 8
             color: Qt.rgba(1, 1, 1, 0.05)
 
