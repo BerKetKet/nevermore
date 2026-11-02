@@ -9,12 +9,8 @@ Item {
     Layout.fillWidth: true
     Layout.fillHeight: true
 
-    NM.Notifications {
-        id: notifModel
-        showExpired: true
-        showDismissed: false
-    }
-
+    property var notifModel: null
+    readonly property int notifCount: notifModel ? notifModel.count : 0
     readonly property bool isDnd: NM.Server.inhibited
 
     ColumnLayout {
@@ -72,7 +68,7 @@ Item {
                 color: clearMouse.containsMouse ? Qt.rgba(1.0, 69/255, 58/255, 0.25) : Qt.rgba(1, 1, 1, 0.06)
                 border.color: clearMouse.containsMouse ? "#ff453a" : Qt.rgba(1, 1, 1, 0.08)
                 border.width: 1
-                visible: notifModel.count > 0
+                visible: notifRoot.notifCount > 0
 
                 RowLayout {
                     anchors.centerIn: parent
@@ -100,7 +96,11 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: notifModel.clear(0xFFFF)
+                    onClicked: {
+                        if (notifModel) {
+                            notifModel.clear(NM.Notifications.ClearExpired);
+                        }
+                    }
                 }
             }
         }
@@ -114,7 +114,7 @@ Item {
             ColumnLayout {
                 anchors.centerIn: parent
                 spacing: 12
-                visible: notifModel.count === 0
+                visible: notifRoot.notifCount === 0
 
                 Rectangle {
                     Layout.alignment: Qt.AlignHCenter
@@ -154,10 +154,10 @@ Item {
             ListView {
                 id: notifList
                 anchors.fill: parent
-                visible: notifModel.count > 0
+                visible: notifRoot.notifCount > 0
                 clip: true
                 spacing: 10
-                model: notifModel
+                model: notifRoot.notifModel
 
                 delegate: Rectangle {
                     id: notifItem
@@ -214,7 +214,11 @@ Item {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: notifModel.close(notifModel.index(index, 0))
+                                    onClicked: {
+                                        if (notifRoot.notifModel) {
+                                            notifRoot.notifModel.close(notifRoot.notifModel.index(index, 0));
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -222,6 +226,7 @@ Item {
                         // Summary / Title
                         Text {
                             text: model.summary || ""
+                            textFormat: Text.PlainText
                             font.family: "SF Hello"
                             font.pixelSize: 13
                             font.bold: true
@@ -234,6 +239,7 @@ Item {
                         // Body
                         Text {
                             text: model.body || ""
+                            textFormat: Text.StyledText
                             font.family: "SF Hello"
                             font.pixelSize: 12
                             color: Qt.rgba(1, 1, 1, 0.7)

@@ -12,7 +12,7 @@ PlasmoidItem {
     preferredRepresentation: fullRepresentation
 
     NM.Notifications {
-        id: notifCounter
+        id: sharedNotifModel
         showExpired: true
         showDismissed: false
     }
@@ -151,12 +151,12 @@ PlasmoidItem {
                                 implicitHeight: 16
                                 radius: 8
                                 color: "#ff453a"
-                                visible: notifCounter.count > 0
+                                visible: sharedNotifModel.count > 0
 
                                 Text {
                                     id: badgeText
                                     anchors.centerIn: parent
-                                    text: notifCounter.count
+                                    text: sharedNotifModel.count
                                     font.family: "SF Hello"
                                     font.pixelSize: 10
                                     font.bold: true
@@ -226,6 +226,7 @@ PlasmoidItem {
                 // Notifications View
                 NotificationsTab {
                     anchors.fill: parent
+                    notifModel: sharedNotifModel
                     visible: root.activeTab === 1
                 }
 
