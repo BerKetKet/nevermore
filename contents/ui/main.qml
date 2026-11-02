@@ -17,7 +17,7 @@ PlasmoidItem {
         showDismissed: false
     }
 
-    property int activeTab: 0 // 0: Widgets, 1: Notifications, 2: Terminal
+    property int activeTab: 0 // 0: Widgets, 1: Notifications, 2: Run
 
     fullRepresentation: Rectangle {
         id: controlCenterPanel
@@ -174,7 +174,7 @@ PlasmoidItem {
                         }
                     }
 
-                    // Tab 3: Terminal
+                    // Tab 3: Run
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
@@ -186,14 +186,14 @@ PlasmoidItem {
                             spacing: 6
 
                             Kirigami.Icon {
-                                source: "utilities-terminal"
+                                source: "system-run"
                                 implicitWidth: 15
                                 implicitHeight: 15
                                 color: root.activeTab === 2 ? "#0a84ff" : Qt.rgba(1, 1, 1, 0.6)
                             }
 
                             Text {
-                                text: i18n("Terminal")
+                                text: i18n("Run")
                                 font.family: "SF Hello"
                                 font.pixelSize: 12
                                 font.bold: root.activeTab === 2
@@ -230,8 +230,8 @@ PlasmoidItem {
                     visible: root.activeTab === 1
                 }
 
-                // Terminal View
-                TerminalTab {
+                // Run View
+                QuickRunTab {
                     anchors.fill: parent
                     visible: root.activeTab === 2
                 }

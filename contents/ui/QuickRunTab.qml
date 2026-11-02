@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtCore
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.plasma5support as Plasma5Support
 
@@ -9,16 +10,61 @@ Item {
     Layout.fillWidth: true
     Layout.fillHeight: true
 
+    readonly property string userHome: String(StandardPaths.writableLocation(StandardPaths.HomeLocation)).replace(/^file:\/\//, "")
+    property int tabCounter: 1
+    property int timeoutSeconds: 30
+
+    function formatPath(p) {
+        if (!p) return "~";
+        if (p === userHome) return "~";
+        if (p.startsWith(userHome + "/")) return "~" + p.substring(userHome.length);
+        return p;
+    }
+
+    function base64Encode(str) {
+        let bytes = [];
+        for (let i = 0; i < str.length; i++) {
+            let code = str.charCodeAt(i);
+            if (code < 0x80) {
+                bytes.push(code);
+            } else if (code < 0x800) {
+                bytes.push(0xc0 | (code >> 6));
+                bytes.push(0x80 | (code & 0x3f));
+            } else if (code < 0xd800 || code >= 0xe000) {
+                bytes.push(0xe0 | (code >> 12));
+                bytes.push(0x80 | ((code >> 6) & 0x3f));
+                bytes.push(0x80 | (code & 0x3f));
+            } else {
+                i++;
+                code = 0x10000 + (((code & 0x3ff) << 10) | (str.charCodeAt(i) & 0x3ff));
+                bytes.push(0xf0 | (code >> 18));
+                bytes.push(0x80 | ((code >> 12) & 0x3f));
+                bytes.push(0x80 | ((code >> 6) & 0x3f));
+                bytes.push(0x80 | (code & 0x3f));
+            }
+        }
+        return Qt.btoa(new Uint8Array(bytes).buffer);
+    }
+
+    function generateSentinel() {
+        let chars = "0123456789abcdef";
+        let res = "NVRM_";
+        for (let i = 0; i < 16; i++) {
+            res += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return res;
+    }
+
     // --- State: Multi-Tab Sessions ---
     property var terminalTabs: [
         {
             id: 1,
-            title: "Tab 1",
-            currentDir: "/home/bgg",
+            title: i18n("Tab 1"),
+            currentDir: userHome,
             history: [
                 {
                     type: "system",
-                    text: i18n("Quick Terminal — Tab 1\nType a command or click 'Paste & Run'.")
+                    text: i18n("Nevermore Quick Run — Tab 1\nType a command or paste from clipboard.")
                 }
             ],
             cmdHistory: [],
@@ -28,6 +74,8 @@ Item {
 
     property int activeTabIndex: 0
     property bool isExecuting: false
+    property string currentSentinel: ""
+    property string runningSource: ""
 
     readonly property var activeTab: (terminalTabs && terminalTabs.length > activeTabIndex) ? terminalTabs[activeTabIndex] : null
 
@@ -38,29 +86,42 @@ Item {
         connectedSources: []
 
         onNewData: (source, data) => {
+            if (source !== termRoot.runningSource) return;
+
             disconnectSource(source);
+            termRoot.runningSource = "";
             termRoot.isExecuting = false;
 
             if (!termRoot.activeTab) return;
 
             let fullOut = data["stdout"] || "";
             let fullErr = data["stderr"] || "";
-            let code = data["exit code"] ?? 0;
+            let exitCode = data["exit code"] ?? 0;
+            let sentinel = termRoot.currentSentinel;
 
             let parsedOut = fullOut;
             let newPwd = termRoot.activeTab.currentDir;
 
-            if (fullOut.includes("__RAVEN_END__")) {
-                let parts = fullOut.split("__RAVEN_END__");
-                parsedOut = parts[0];
-                let trailer = parts[1].trim();
-                let lines = trailer.split("\n");
-                if (lines.length >= 1) {
-                    let c = parseInt(lines[0]);
-                    if (!isNaN(c)) code = c;
+            if (sentinel !== "" && fullOut.indexOf(sentinel) !== -1) {
+                let tokenMarker = "\n" + sentinel + "\n";
+                let idx = fullOut.lastIndexOf(tokenMarker);
+                if (idx === -1) {
+                    idx = fullOut.lastIndexOf(sentinel);
+                    tokenMarker = sentinel;
                 }
-                if (lines.length >= 2) {
-                    newPwd = lines[1].trim();
+
+                if (idx !== -1) {
+                    parsedOut = fullOut.substring(0, idx);
+                    let trailer = fullOut.substring(idx + tokenMarker.length).trim();
+                    let lines = trailer.split("\n");
+                    if (lines.length >= 1) {
+                        let c = parseInt(lines[0], 10);
+                        if (!isNaN(c)) exitCode = c;
+                    }
+                    if (lines.length >= 2) {
+                        let p = lines.slice(1).join("\n").trim();
+                        if (p.length > 0) newPwd = p;
+                    }
                 }
             }
 
@@ -71,9 +132,11 @@ Item {
                 resultText += fullErr;
             }
 
-            if (resultText === "" && code === 0) {
-                resultText = "(Command completed with exit code 0)";
+            if (resultText.trim() === "" && exitCode === 0) {
+                resultText = i18n("(Command completed successfully with exit code 0)");
             }
+
+            let isTimeout = (exitCode === 124);
 
             // Append output to history
             let tabsCopy = termRoot.terminalTabs.slice();
@@ -83,7 +146,9 @@ Item {
             histCopy.push({
                 type: "output",
                 text: resultText.trim(),
-                exitCode: code
+                exitCode: exitCode,
+                isTimeout: isTimeout,
+                cwd: newPwd
             });
 
             tabCopy.history = histCopy;
@@ -92,6 +157,17 @@ Item {
             termRoot.terminalTabs = tabsCopy;
 
             outputList.positionViewAtEnd();
+        }
+    }
+
+    // Helper Engine for Stop and Background launch
+    Plasma5Support.DataSource {
+        id: helperEngine
+        engine: "executable"
+        connectedSources: []
+
+        onNewData: (source, data) => {
+            disconnectSource(source);
         }
     }
 
@@ -106,20 +182,23 @@ Item {
             if (source === "wl-paste") {
                 let clip = data["stdout"] || "";
                 clip = clip.trim();
-                if (clip.length > 0) {
+                if (clip.length === 0) return;
+
+                if (clip.indexOf("\n") !== -1 || clip.indexOf("\r") !== -1) {
+                    confirmDialog.pendingText = clip;
+                    confirmDialog.visible = true;
+                } else {
                     cmdInput.text = clip;
-                    termRoot.executeCommand(clip);
                 }
             }
         }
     }
 
     // Actions
-    function executeCommand(cmd) {
-        if (!cmd || cmd.trim() === "" || !activeTab) return;
+    function executeCommand(cmd, asBackground) {
+        if (!cmd || cmd.trim() === "" || !activeTab || isExecuting) return;
         cmd = cmd.trim();
 
-        // 1. Append command to display history
         let tabsCopy = terminalTabs.slice();
         let tabCopy = Object.assign({}, tabsCopy[activeTabIndex]);
         let histCopy = tabCopy.history.slice();
@@ -127,7 +206,7 @@ Item {
 
         histCopy.push({
             type: "input",
-            text: tabCopy.currentDir.replace("/home/bgg", "~") + " ❯ " + cmd
+            text: formatPath(tabCopy.currentDir) + " ❯ " + (asBackground ? "[bg] " : "") + cmd
         });
         cmdHistCopy.push(cmd);
 
@@ -141,13 +220,62 @@ Item {
         isExecuting = true;
         outputList.positionViewAtEnd();
 
-        // 2. Dispatch command through bash
-        let escapedCmd = cmd.replace(/'/g, "'\\''");
-        let wrapper = "cd '" + tabCopy.currentDir + "' ; eval '" + escapedCmd + "' ; echo '__RAVEN_END__$?' ; pwd";
-        execEngine.connectSource(wrapper);
+        currentSentinel = generateSentinel();
+        let b64Cwd = base64Encode(tabCopy.currentDir);
+        let b64Cmd = base64Encode(cmd);
+        let runnerPath = userHome + "/.local/bin/nevermore-run";
+
+        let fullCommand = "";
+        if (asBackground) {
+            fullCommand = runnerPath + " --bg " + currentSentinel + " " + b64Cwd + " " + b64Cmd;
+        } else {
+            fullCommand = runnerPath + " " + currentSentinel + " " + b64Cwd + " " + b64Cmd + " " + timeoutSeconds;
+        }
+
+        runningSource = fullCommand;
+        execEngine.connectSource(fullCommand);
     }
 
-    function pasteAndExecute() {
+    function stopCommand() {
+        if (!isExecuting) return;
+
+        let sentinel = currentSentinel;
+        let runnerPath = userHome + "/.local/bin/nevermore-run";
+        helperEngine.connectSource(runnerPath + " --stop " + sentinel);
+
+        if (runningSource !== "") {
+            execEngine.disconnectSource(runningSource);
+            runningSource = "";
+        }
+        isExecuting = false;
+
+        if (activeTab) {
+            let tabsCopy = terminalTabs.slice();
+            let tabCopy = Object.assign({}, tabsCopy[activeTabIndex]);
+            let histCopy = tabCopy.history.slice();
+
+            histCopy.push({
+                type: "output",
+                text: i18n("Command stopped by user."),
+                exitCode: 130,
+                isTimeout: false,
+                cwd: tabCopy.currentDir
+            });
+
+            tabCopy.history = histCopy;
+            tabsCopy[activeTabIndex] = tabCopy;
+            terminalTabs = tabsCopy;
+            outputList.positionViewAtEnd();
+        }
+    }
+
+    function openInKonsole(dir) {
+        let targetDir = dir || (activeTab ? activeTab.currentDir : userHome);
+        let escapedDir = targetDir.replace(/'/g, "'\\''");
+        helperEngine.connectSource("konsole --workdir '" + escapedDir + "' &");
+    }
+
+    function pasteClipboard() {
         clipEngine.connectSource("wl-paste");
     }
 
@@ -158,7 +286,7 @@ Item {
         tabCopy.history = [
             {
                 type: "system",
-                text: i18n("Terminal buffer cleared.")
+                text: i18n("Buffer cleared.")
             }
         ];
         tabsCopy[activeTabIndex] = tabCopy;
@@ -166,16 +294,16 @@ Item {
     }
 
     function addTab() {
-        let nextId = terminalTabs.length + 1;
+        let nextId = ++tabCounter;
         let tabsCopy = terminalTabs.slice();
         tabsCopy.push({
             id: nextId,
-            title: "Tab " + nextId,
-            currentDir: "/home/bgg",
+            title: i18n("Tab %1", nextId),
+            currentDir: userHome,
             history: [
                 {
                     type: "system",
-                    text: i18n("Quick Terminal — Tab %1", nextId)
+                    text: i18n("Nevermore Quick Run — Tab %1", nextId)
                 }
             ],
             cmdHistory: [],
@@ -199,7 +327,7 @@ Item {
         anchors.fill: parent
         spacing: 8
 
-        // --- Row 1: Terminal Tab Bar ([ Tab 1 ] [ Tab 2 ] [ + ]) ---
+        // --- Row 1: Tab Bar ([ Tab 1 ] [ Tab 2 ] [ + ]) ---
         ScrollView {
             Layout.fillWidth: true
             implicitHeight: 32
@@ -225,7 +353,7 @@ Item {
                             spacing: 6
 
                             Kirigami.Icon {
-                                source: "utilities-terminal"
+                                source: "system-run"
                                 implicitWidth: 12
                                 implicitHeight: 12
                                 color: termRoot.activeTabIndex === index ? "#0a84ff" : Qt.rgba(1, 1, 1, 0.5)
@@ -302,12 +430,12 @@ Item {
             }
         }
 
-        // --- Row 2: Action Buttons ([ 📋 Paste & Run ] [ ▶ Run ] [ 🧹 Clear ]) ---
+        // --- Row 2: Action Buttons ([ 📋 Paste ] [ ▶ Run / ■ Stop ] [ ⚙ Bg ] [ 🧹 Clear ]) ---
         RowLayout {
             Layout.fillWidth: true
             spacing: 6
 
-            // Paste & Run
+            // Paste Button
             Rectangle {
                 Layout.fillWidth: true
                 height: 30
@@ -324,7 +452,7 @@ Item {
                         color: "#ffffff"
                     }
                     Text {
-                        text: i18n("Paste & Run")
+                        text: i18n("Paste")
                         font.family: "SF Hello"
                         font.pixelSize: 11
                         font.bold: true
@@ -337,35 +465,37 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: termRoot.pasteAndExecute()
+                    onClicked: termRoot.pasteClipboard()
                 }
             }
 
-            // Execute
+            // Run / Stop Button
             Rectangle {
-                implicitWidth: runTxt.implicitWidth + 20
+                implicitWidth: runTxt.implicitWidth + 24
                 height: 30
                 radius: 8
-                color: runM.containsMouse ? Qt.rgba(48/255, 209/255, 88/255, 0.3) : Qt.rgba(48/255, 209/255, 88/255, 0.15)
-                border.color: "#30d158"
+                color: termRoot.isExecuting
+                       ? (stopM.containsMouse ? Qt.rgba(1.0, 69/255, 58/255, 0.4) : Qt.rgba(1.0, 69/255, 58/255, 0.2))
+                       : (runM.containsMouse ? Qt.rgba(48/255, 209/255, 88/255, 0.3) : Qt.rgba(48/255, 209/255, 88/255, 0.15))
+                border.color: termRoot.isExecuting ? "#ff453a" : "#30d158"
                 border.width: 1
 
                 RowLayout {
                     anchors.centerIn: parent
                     spacing: 4
                     Kirigami.Icon {
-                        source: "system-run"
+                        source: termRoot.isExecuting ? "process-stop" : "system-run"
                         implicitWidth: 13
                         implicitHeight: 13
-                        color: "#30d158"
+                        color: termRoot.isExecuting ? "#ff453a" : "#30d158"
                     }
                     Text {
                         id: runTxt
-                        text: i18n("Run")
+                        text: termRoot.isExecuting ? i18n("Stop") : i18n("Run")
                         font.family: "SF Hello"
                         font.pixelSize: 11
                         font.bold: true
-                        color: "#30d158"
+                        color: termRoot.isExecuting ? "#ff453a" : "#30d158"
                     }
                 }
 
@@ -374,11 +504,63 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: termRoot.executeCommand(cmdInput.text)
+                    onClicked: {
+                        if (termRoot.isExecuting) {
+                            termRoot.stopCommand();
+                        } else {
+                            termRoot.executeCommand(cmdInput.text, false);
+                        }
+                    }
+                }
+
+                MouseArea {
+                    id: stopM
+                    anchors.fill: parent
+                    enabled: termRoot.isExecuting
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: termRoot.stopCommand()
                 }
             }
 
-            // Clear
+            // Background Task Button
+            Rectangle {
+                implicitWidth: bgTxt.implicitWidth + 20
+                height: 30
+                radius: 8
+                color: bgM.containsMouse ? Qt.rgba(191/255, 90/255, 242/255, 0.25) : Qt.rgba(1, 1, 1, 0.06)
+                border.color: bgM.containsMouse ? "#bf5af2" : Qt.rgba(1, 1, 1, 0.08)
+                border.width: 1
+
+                RowLayout {
+                    anchors.centerIn: parent
+                    spacing: 4
+                    Kirigami.Icon {
+                        source: "system-switch-user"
+                        implicitWidth: 13
+                        implicitHeight: 13
+                        color: bgM.containsMouse ? "#bf5af2" : Qt.rgba(1, 1, 1, 0.7)
+                    }
+                    Text {
+                        id: bgTxt
+                        text: i18n("Bg Task")
+                        font.family: "SF Hello"
+                        font.pixelSize: 11
+                        font.bold: true
+                        color: bgM.containsMouse ? "#bf5af2" : Qt.rgba(1, 1, 1, 0.8)
+                    }
+                }
+
+                MouseArea {
+                    id: bgM
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: termRoot.executeCommand(cmdInput.text, true)
+                }
+            }
+
+            // Clear Button
             Rectangle {
                 implicitWidth: clearTxt.implicitWidth + 20
                 height: 30
@@ -416,10 +598,10 @@ Item {
             }
         }
 
-        // --- Current Directory Indicator ---
+        // --- Current Directory & Konsole Launcher Row ---
         Rectangle {
             Layout.fillWidth: true
-            height: 22
+            height: 24
             radius: 6
             color: Qt.rgba(1, 1, 1, 0.03)
 
@@ -437,12 +619,47 @@ Item {
                 }
 
                 Text {
-                    text: termRoot.activeTab ? termRoot.activeTab.currentDir.replace("/home/bgg", "~") : "~"
+                    text: termRoot.activeTab ? termRoot.formatPath(termRoot.activeTab.currentDir) : "~"
                     font.family: "SF Mono"
                     font.pixelSize: 10
-                    color: Qt.rgba(1, 1, 1, 0.5)
+                    color: Qt.rgba(1, 1, 1, 0.6)
                     elide: Text.ElideMiddle
                     Layout.fillWidth: true
+                }
+
+                // Open in Konsole Link/Button
+                Rectangle {
+                    implicitWidth: konsoleTxt.implicitWidth + 14
+                    height: 18
+                    radius: 4
+                    color: konsoleM.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : "transparent"
+
+                    RowLayout {
+                        anchors.centerIn: parent
+                        spacing: 4
+                        Kirigami.Icon {
+                            source: "utilities-terminal"
+                            implicitWidth: 10
+                            implicitHeight: 10
+                            color: "#0a84ff"
+                        }
+                        Text {
+                            id: konsoleTxt
+                            text: i18n("Open in Konsole")
+                            font.family: "SF Hello"
+                            font.pixelSize: 10
+                            font.bold: true
+                            color: "#0a84ff"
+                        }
+                    }
+
+                    MouseArea {
+                        id: konsoleM
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: termRoot.openInKonsole()
+                    }
                 }
 
                 Text {
@@ -455,7 +672,7 @@ Item {
             }
         }
 
-        // --- Terminal Output Buffer (Selectable, Scrollable) ---
+        // --- Output Buffer Area ---
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -469,20 +686,21 @@ Item {
                 id: outputList
                 anchors.fill: parent
                 anchors.margins: 8
-                spacing: 6
+                spacing: 8
                 model: termRoot.activeTab ? termRoot.activeTab.history : []
 
                 ScrollBar.vertical: ScrollBar {
                     active: true
                 }
 
-                delegate: Item {
+                delegate: ColumnLayout {
                     width: outputList.width
-                    implicitHeight: contentTxt.implicitHeight
+                    spacing: 4
 
+                    // Output Text Area
                     TextEdit {
                         id: contentTxt
-                        width: parent.width
+                        Layout.fillWidth: true
                         readOnly: true
                         selectByMouse: true
                         wrapMode: TextEdit.Wrap
@@ -499,11 +717,89 @@ Item {
                         font.bold: modelData.type === "input"
                         text: modelData.text || ""
                     }
+
+                    // Exit Code Badge and Failure Tag
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        visible: modelData.type === "output" && modelData.exitCode !== undefined
+
+                        Rectangle {
+                            implicitWidth: exitBadgeText.implicitWidth + 10
+                            height: 18
+                            radius: 4
+                            color: modelData.exitCode === 0 ? Qt.rgba(48/255, 209/255, 88/255, 0.15) : Qt.rgba(1.0, 69/255, 58/255, 0.2)
+                            border.color: modelData.exitCode === 0 ? "#30d158" : "#ff453a"
+                            border.width: 1
+
+                            Text {
+                                id: exitBadgeText
+                                anchors.centerIn: parent
+                                text: (modelData && modelData.exitCode !== undefined) ? (modelData.exitCode === 0 ? i18n("Exit 0") : i18n("Exit %1", String(modelData.exitCode))) : ""
+                                font.family: "SF Mono"
+                                font.pixelSize: 10
+                                font.bold: true
+                                color: modelData.exitCode === 0 ? "#30d158" : "#ff453a"
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
+                    }
+
+                    // Timeout Hint Box
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: timeoutCol.implicitHeight + 16
+                        radius: 8
+                        color: Qt.rgba(1.0, 159/255, 10/255, 0.12)
+                        border.color: "#ff9f0a"
+                        border.width: 1
+                        visible: modelData.isTimeout === true
+
+                        ColumnLayout {
+                            id: timeoutCol
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            spacing: 6
+
+                            RowLayout {
+                                spacing: 6
+                                Kirigami.Icon {
+                                    source: "dialog-warning"
+                                    implicitWidth: 16
+                                    implicitHeight: 16
+                                    color: "#ff9f0a"
+                                }
+                                Text {
+                                    text: i18n("Command may need an interactive terminal")
+                                    font.family: "SF Hello"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                    color: "#ff9f0a"
+                                }
+                            }
+
+                            Text {
+                                text: i18n("The command ran past the %1 second timeout. If it is expecting keyboard input or full TTY control, run it in a full terminal window.", termRoot.timeoutSeconds)
+                                font.family: "SF Hello"
+                                font.pixelSize: 11
+                                color: "#f2f2f7"
+                                wrapMode: Text.Wrap
+                                Layout.fillWidth: true
+                            }
+
+                            Button {
+                                text: i18n("Open in Konsole")
+                                icon.name: "utilities-terminal"
+                                onClicked: termRoot.openInKonsole(modelData.cwd)
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        // --- Terminal Input Bar at Bottom ---
+        // --- Command Input Bar at Bottom ---
         Rectangle {
             Layout.fillWidth: true
             height: 36
@@ -537,7 +833,7 @@ Item {
                     focus: true
 
                     onAccepted: {
-                        termRoot.executeCommand(text);
+                        termRoot.executeCommand(text, false);
                     }
 
                     Keys.onUpPressed: {
@@ -586,7 +882,122 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: termRoot.executeCommand(cmdInput.text)
+                        onClicked: termRoot.executeCommand(cmdInput.text, false)
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Multiline Paste Confirmation Overlay ---
+    Rectangle {
+        id: confirmDialog
+        anchors.fill: parent
+        color: Qt.rgba(0, 0, 0, 0.75)
+        visible: false
+        z: 100
+
+        property string pendingText: ""
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 24, 360)
+            implicitHeight: modalCol.implicitHeight + 24
+            radius: 12
+            color: "#1c1c1e"
+            border.color: Qt.rgba(1, 1, 1, 0.15)
+            border.width: 1
+
+            ColumnLayout {
+                id: modalCol
+                anchors.fill: parent
+                anchors.margins: 14
+                spacing: 12
+
+                RowLayout {
+                    spacing: 8
+                    Kirigami.Icon {
+                        source: "dialog-warning"
+                        implicitWidth: 20
+                        implicitHeight: 20
+                        color: "#ff9f0a"
+                    }
+                    Text {
+                        text: i18n("Multiline Clipboard Content")
+                        font.family: "SF Hello"
+                        font.pixelSize: 14
+                        font.bold: true
+                        color: "#ffffff"
+                    }
+                }
+
+                Text {
+                    text: i18n("The pasted text contains multiple lines. Review the content before inserting:")
+                    font.family: "SF Hello"
+                    font.pixelSize: 11
+                    color: Qt.rgba(1, 1, 1, 0.7)
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: Math.min(120, previewText.implicitHeight + 12)
+                    radius: 6
+                    color: "#000000"
+                    border.color: Qt.rgba(1, 1, 1, 0.1)
+                    clip: true
+
+                    ScrollView {
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        TextEdit {
+                            id: previewText
+                            width: parent.width
+                            readOnly: true
+                            selectByMouse: true
+                            wrapMode: TextEdit.Wrap
+                            font.family: "SF Mono"
+                            font.pixelSize: 10
+                            color: "#30d158"
+                            text: confirmDialog.pendingText
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Button {
+                        Layout.fillWidth: true
+                        text: i18n("Cancel")
+                        onClicked: {
+                            confirmDialog.visible = false;
+                            confirmDialog.pendingText = "";
+                        }
+                    }
+
+                    Button {
+                        Layout.fillWidth: true
+                        text: i18n("Insert")
+                        onClicked: {
+                            cmdInput.text = confirmDialog.pendingText;
+                            confirmDialog.visible = false;
+                            confirmDialog.pendingText = "";
+                        }
+                    }
+
+                    Button {
+                        Layout.fillWidth: true
+                        text: i18n("Run")
+                        highlighted: true
+                        onClicked: {
+                            let toRun = confirmDialog.pendingText;
+                            confirmDialog.visible = false;
+                            confirmDialog.pendingText = "";
+                            termRoot.executeCommand(toRun, false);
+                        }
                     }
                 }
             }
