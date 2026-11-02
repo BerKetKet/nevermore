@@ -79,6 +79,32 @@ Item {
 
     readonly property var activeTab: (terminalTabs && terminalTabs.length > activeTabIndex) ? terminalTabs[activeTabIndex] : null
 
+    // Background Tasks State
+    property var bgTasks: []
+    property bool tasksExpanded: false
+    readonly property bool isActuallyVisible: visible && (Window.window ? (Window.window.visible && Window.window.visibility !== Window.Hidden) : true)
+
+    Timer {
+        id: taskPollTimer
+        interval: 3000
+        repeat: true
+        running: termRoot.isActuallyVisible
+        onTriggered: termRoot.pollTasks()
+    }
+
+    Timer {
+        id: taskRefreshTimer
+        interval: 350
+        repeat: false
+        onTriggered: termRoot.pollTasks()
+    }
+
+    onIsActuallyVisibleChanged: {
+        if (isActuallyVisible) {
+            termRoot.pollTasks();
+        }
+    }
+
     // Execution Engine via Plasma5Support
     Plasma5Support.DataSource {
         id: execEngine
@@ -194,6 +220,68 @@ Item {
         }
     }
 
+    // Tasks Polling Engine
+    Plasma5Support.DataSource {
+        id: taskPollEngine
+        engine: "executable"
+        connectedSources: []
+
+        onNewData: (source, data) => {
+            disconnectSource(source);
+            let out = (data["stdout"] || "").trim();
+            try {
+                let parsed = JSON.parse(out);
+                if (Array.isArray(parsed)) {
+                    termRoot.bgTasks = parsed;
+                    if (parsed.length > 0 && !termRoot.tasksExpanded) {
+                        termRoot.tasksExpanded = true;
+                    }
+                }
+            } catch (e) {
+                // Not JSON or parse error
+            }
+        }
+    }
+
+    // Task Actions Engine (Logs / Output)
+    Plasma5Support.DataSource {
+        id: taskActionEngine
+        engine: "executable"
+        connectedSources: []
+
+        onNewData: (source, data) => {
+            disconnectSource(source);
+            if (source.startsWith("journalctl --user -u ")) {
+                let stdout = (data["stdout"] || "").trim();
+                let stderr = (data["stderr"] || "").trim();
+                let combined = stdout;
+                if (stderr.length > 0) {
+                    if (combined.length > 0) combined += "\n";
+                    combined += stderr;
+                }
+                if (combined.length === 0) {
+                    combined = i18n("(No logs found for unit)");
+                }
+
+                if (termRoot.activeTab) {
+                    let tabsCopy = termRoot.terminalTabs.slice();
+                    let tabCopy = Object.assign({}, tabsCopy[termRoot.activeTabIndex]);
+                    let histCopy = tabCopy.history.slice();
+
+                    histCopy.push({
+                        type: "system",
+                        text: "=== " + source + " ===\n" + combined
+                    });
+
+                    tabCopy.history = histCopy;
+                    tabsCopy[termRoot.activeTabIndex] = tabCopy;
+                    termRoot.terminalTabs = tabsCopy;
+                    outputList.positionViewAtEnd();
+                }
+            }
+        }
+    }
+
     // Actions
     function executeCommand(cmd, asBackground) {
         if (!cmd || cmd.trim() === "" || !activeTab || isExecuting) return;
@@ -228,6 +316,7 @@ Item {
         let fullCommand = "";
         if (asBackground) {
             fullCommand = runnerPath + " --bg " + currentSentinel + " " + b64Cwd + " " + b64Cmd;
+            taskRefreshTimer.restart();
         } else {
             fullCommand = runnerPath + " " + currentSentinel + " " + b64Cwd + " " + b64Cmd + " " + timeoutSeconds;
         }
@@ -277,6 +366,21 @@ Item {
 
     function pasteClipboard() {
         clipEngine.connectSource("wl-paste");
+    }
+
+    function pollTasks() {
+        taskPollEngine.connectSource("systemctl --user list-units \"nevermore-task-*\" --output=json");
+    }
+
+    function viewTaskLogs(unit) {
+        if (!unit) return;
+        taskActionEngine.connectSource("journalctl --user -u " + unit + " -n 200 --no-pager");
+    }
+
+    function stopTask(unit) {
+        if (!unit) return;
+        helperEngine.connectSource("systemctl --user stop " + unit);
+        taskRefreshTimer.restart();
     }
 
     function clearCurrentTab() {
@@ -668,6 +772,179 @@ Item {
                     font.pixelSize: 10
                     font.bold: true
                     color: termRoot.isExecuting ? "#ff9f0a" : "#30d158"
+                }
+            }
+        }
+
+        // --- Background Tasks Section ---
+        Rectangle {
+            Layout.fillWidth: true
+            implicitHeight: tasksSectionCol.implicitHeight + (termRoot.tasksExpanded ? 12 : 8)
+            radius: 8
+            color: Qt.rgba(1, 1, 1, 0.04)
+            border.color: Qt.rgba(1, 1, 1, 0.08)
+            border.width: 1
+            clip: true
+
+            ColumnLayout {
+                id: tasksSectionCol
+                anchors.fill: parent
+                anchors.margins: 6
+                spacing: 6
+
+                // Header: [ Icon ] Background Tasks (count) [ chevron ]
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    Kirigami.Icon {
+                        source: "system-switch-user"
+                        implicitWidth: 14
+                        implicitHeight: 14
+                        color: "#bf5af2"
+                    }
+
+                    Text {
+                        text: i18n("Background Tasks (%1)", termRoot.bgTasks.length)
+                        font.family: "SF Hello"
+                        font.pixelSize: 11
+                        font.bold: true
+                        color: termRoot.bgTasks.length > 0 ? "#ffffff" : Qt.rgba(1, 1, 1, 0.6)
+                        Layout.fillWidth: true
+                    }
+
+                    Text {
+                        text: termRoot.tasksExpanded ? "▲" : "▼"
+                        font.pixelSize: 10
+                        color: Qt.rgba(1, 1, 1, 0.5)
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: termRoot.tasksExpanded = !termRoot.tasksExpanded
+                    }
+                }
+
+                // Expanded view
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    visible: termRoot.tasksExpanded
+                    spacing: 4
+
+                    Text {
+                        visible: termRoot.bgTasks.length === 0
+                        text: i18n("No background tasks running.")
+                        font.family: "SF Hello"
+                        font.pixelSize: 10
+                        color: Qt.rgba(1, 1, 1, 0.4)
+                        Layout.leftMargin: 4
+                        Layout.topMargin: 2
+                    }
+
+                    Repeater {
+                        model: termRoot.bgTasks
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: 28
+                            radius: 6
+                            color: Qt.rgba(1, 1, 1, 0.06)
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 6
+                                anchors.rightMargin: 6
+                                spacing: 6
+
+                                // Unit name
+                                Text {
+                                    text: modelData.unit ? modelData.unit.replace(/^nevermore-task-/, "").replace(/\.service$/, "") : ""
+                                    font.family: "SF Mono"
+                                    font.pixelSize: 10
+                                    color: "#ffffff"
+                                    elide: Text.ElideMiddle
+                                    Layout.fillWidth: true
+                                }
+
+                                // State badge
+                                Rectangle {
+                                    implicitWidth: stateTxt.implicitWidth + 8
+                                    height: 16
+                                    radius: 4
+                                    color: modelData.sub === "running" ? Qt.rgba(48/255, 209/255, 88/255, 0.2) : Qt.rgba(1, 1, 1, 0.1)
+                                    border.color: modelData.sub === "running" ? "#30d158" : Qt.rgba(1, 1, 1, 0.2)
+                                    border.width: 1
+
+                                    Text {
+                                        id: stateTxt
+                                        anchors.centerIn: parent
+                                        text: modelData.sub || modelData.active || "unknown"
+                                        font.family: "SF Hello"
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                        color: modelData.sub === "running" ? "#30d158" : Qt.rgba(1, 1, 1, 0.7)
+                                    }
+                                }
+
+                                // Logs Button
+                                Rectangle {
+                                    implicitWidth: logsTxt.implicitWidth + 10
+                                    height: 20
+                                    radius: 4
+                                    color: logsM.containsMouse ? Qt.rgba(10/255, 132/255, 1.0, 0.3) : Qt.rgba(10/255, 132/255, 1.0, 0.15)
+                                    border.color: "#0a84ff"
+                                    border.width: 1
+
+                                    Text {
+                                        id: logsTxt
+                                        anchors.centerIn: parent
+                                        text: i18n("Logs")
+                                        font.family: "SF Hello"
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                        color: "#0a84ff"
+                                    }
+
+                                    MouseArea {
+                                        id: logsM
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: termRoot.viewTaskLogs(modelData.unit)
+                                    }
+                                }
+
+                                // Stop Button
+                                Rectangle {
+                                    implicitWidth: stopTaskTxt.implicitWidth + 10
+                                    height: 20
+                                    radius: 4
+                                    color: stopTaskM.containsMouse ? Qt.rgba(1.0, 69/255, 58/255, 0.3) : Qt.rgba(1.0, 69/255, 58/255, 0.15)
+                                    border.color: "#ff453a"
+                                    border.width: 1
+
+                                    Text {
+                                        id: stopTaskTxt
+                                        anchors.centerIn: parent
+                                        text: i18n("Stop")
+                                        font.family: "SF Hello"
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                        color: "#ff453a"
+                                    }
+
+                                    MouseArea {
+                                        id: stopTaskM
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: termRoot.stopTask(modelData.unit)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
