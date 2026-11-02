@@ -76,6 +76,7 @@ Item {
     property bool isExecuting: false
     property string currentSentinel: ""
     property string runningSource: ""
+    property int runningTabId: -1
 
     readonly property var activeTab: (terminalTabs && terminalTabs.length > activeTabIndex) ? terminalTabs[activeTabIndex] : null
 
@@ -164,9 +165,20 @@ Item {
 
             let isTimeout = (exitCode === 124);
 
-            // Append output to history
+            // Append output to the originating tab history
             let tabsCopy = termRoot.terminalTabs.slice();
-            let tabCopy = Object.assign({}, tabsCopy[termRoot.activeTabIndex]);
+            let targetIdx = -1;
+            for (let i = 0; i < tabsCopy.length; i++) {
+                if (tabsCopy[i].id === termRoot.runningTabId) {
+                    targetIdx = i;
+                    break;
+                }
+            }
+            if (targetIdx === -1) {
+                targetIdx = termRoot.activeTabIndex;
+            }
+
+            let tabCopy = Object.assign({}, tabsCopy[targetIdx]);
             let histCopy = tabCopy.history.slice();
 
             histCopy.push({
@@ -179,10 +191,13 @@ Item {
 
             tabCopy.history = histCopy;
             tabCopy.currentDir = newPwd;
-            tabsCopy[termRoot.activeTabIndex] = tabCopy;
+            tabsCopy[targetIdx] = tabCopy;
             termRoot.terminalTabs = tabsCopy;
 
-            outputList.positionViewAtEnd();
+            if (targetIdx === termRoot.activeTabIndex) {
+                outputList.positionViewAtEnd();
+            }
+            termRoot.runningTabId = -1;
         }
     }
 
@@ -304,6 +319,7 @@ Item {
         tabsCopy[activeTabIndex] = tabCopy;
         terminalTabs = tabsCopy;
 
+        runningTabId = activeTab ? activeTab.id : -1;
         cmdInput.text = "";
         isExecuting = true;
         outputList.positionViewAtEnd();
@@ -315,10 +331,10 @@ Item {
 
         let fullCommand = "";
         if (asBackground) {
-            fullCommand = runnerPath + " --bg " + currentSentinel + " " + b64Cwd + " " + b64Cmd;
+            fullCommand = "\"" + runnerPath + "\" --bg " + currentSentinel + " " + b64Cwd + " " + b64Cmd;
             taskRefreshTimer.restart();
         } else {
-            fullCommand = runnerPath + " " + currentSentinel + " " + b64Cwd + " " + b64Cmd + " " + timeoutSeconds;
+            fullCommand = "\"" + runnerPath + "\" " + currentSentinel + " " + b64Cwd + " " + b64Cmd + " " + timeoutSeconds;
         }
 
         runningSource = fullCommand;
@@ -330,7 +346,7 @@ Item {
 
         let sentinel = currentSentinel;
         let runnerPath = userHome + "/.local/bin/nevermore-run";
-        helperEngine.connectSource(runnerPath + " --stop " + sentinel);
+        helperEngine.connectSource("\"" + runnerPath + "\" --stop " + sentinel);
 
         if (runningSource !== "") {
             execEngine.disconnectSource(runningSource);
@@ -338,9 +354,20 @@ Item {
         }
         isExecuting = false;
 
-        if (activeTab) {
-            let tabsCopy = terminalTabs.slice();
-            let tabCopy = Object.assign({}, tabsCopy[activeTabIndex]);
+        let tabsCopy = terminalTabs.slice();
+        let targetIdx = -1;
+        for (let i = 0; i < tabsCopy.length; i++) {
+            if (tabsCopy[i].id === termRoot.runningTabId) {
+                targetIdx = i;
+                break;
+            }
+        }
+        if (targetIdx === -1) {
+            targetIdx = activeTabIndex;
+        }
+
+        if (targetIdx >= 0 && targetIdx < tabsCopy.length) {
+            let tabCopy = Object.assign({}, tabsCopy[targetIdx]);
             let histCopy = tabCopy.history.slice();
 
             histCopy.push({
@@ -352,16 +379,19 @@ Item {
             });
 
             tabCopy.history = histCopy;
-            tabsCopy[activeTabIndex] = tabCopy;
+            tabsCopy[targetIdx] = tabCopy;
             terminalTabs = tabsCopy;
-            outputList.positionViewAtEnd();
+            if (targetIdx === activeTabIndex) {
+                outputList.positionViewAtEnd();
+            }
         }
+        termRoot.runningTabId = -1;
     }
 
     function openInKonsole(dir) {
         let targetDir = dir || (activeTab ? activeTab.currentDir : userHome);
         let escapedDir = targetDir.replace(/'/g, "'\\''");
-        helperEngine.connectSource("konsole --workdir '" + escapedDir + "' &");
+        helperEngine.connectSource("setsid -f konsole --workdir '" + escapedDir + "' </dev/null >/dev/null 2>&1");
     }
 
     function pasteClipboard() {
@@ -1176,6 +1206,33 @@ Item {
 
         property string pendingText: ""
 
+        // Truly modal: MouseArea absorbs all pointer events so background cannot be clicked
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            preventStealing: true
+            acceptedButtons: Qt.AllButtons
+            onClicked: (mouse) => mouse.accepted = true
+            onPressed: (mouse) => mouse.accepted = true
+            onReleased: (mouse) => mouse.accepted = true
+            onDoubleClicked: (mouse) => mouse.accepted = true
+            onWheel: (wheel) => wheel.accepted = true
+        }
+
+        // Trap keyboard focus
+        focus: visible
+        Keys.onEscapePressed: {
+            confirmDialog.visible = false;
+            confirmDialog.pendingText = "";
+            cmdInput.forceActiveFocus();
+        }
+
+        onVisibleChanged: {
+            if (visible) {
+                runModalBtn.forceActiveFocus();
+            }
+        }
+
         Rectangle {
             anchors.centerIn: parent
             width: Math.min(parent.width - 24, 360)
@@ -1184,6 +1241,12 @@ Item {
             color: "#1c1c1e"
             border.color: Qt.rgba(1, 1, 1, 0.15)
             border.width: 1
+
+            // Absorb pointer clicks on the dialog itself
+            MouseArea {
+                anchors.fill: parent
+                onClicked: (mouse) => mouse.accepted = true
+            }
 
             ColumnLayout {
                 id: modalCol
@@ -1209,7 +1272,7 @@ Item {
                 }
 
                 Text {
-                    text: i18n("The pasted text contains multiple lines. Review the content before inserting:")
+                    text: i18n("The pasted text contains multiple lines. Execute with bash or cancel:")
                     font.family: "SF Hello"
                     font.pixelSize: 11
                     color: Qt.rgba(1, 1, 1, 0.7)
@@ -1219,7 +1282,7 @@ Item {
 
                 Rectangle {
                     Layout.fillWidth: true
-                    implicitHeight: Math.min(120, previewText.implicitHeight + 12)
+                    implicitHeight: Math.min(140, previewText.implicitHeight + 12)
                     radius: 6
                     color: "#000000"
                     border.color: Qt.rgba(1, 1, 1, 0.1)
@@ -1247,28 +1310,22 @@ Item {
                     spacing: 8
 
                     Button {
+                        id: cancelModalBtn
                         Layout.fillWidth: true
                         text: i18n("Cancel")
                         onClicked: {
                             confirmDialog.visible = false;
                             confirmDialog.pendingText = "";
+                            cmdInput.forceActiveFocus();
                         }
                     }
 
                     Button {
-                        Layout.fillWidth: true
-                        text: i18n("Insert")
-                        onClicked: {
-                            cmdInput.text = confirmDialog.pendingText;
-                            confirmDialog.visible = false;
-                            confirmDialog.pendingText = "";
-                        }
-                    }
-
-                    Button {
+                        id: runModalBtn
                         Layout.fillWidth: true
                         text: i18n("Run")
                         highlighted: true
+                        focus: true
                         onClicked: {
                             let toRun = confirmDialog.pendingText;
                             confirmDialog.visible = false;
