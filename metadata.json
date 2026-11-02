@@ -3,23 +3,19 @@
     "KPlugin": {
         "Authors": [
             {
-                "Name": "Buddies of Budgie & macOS Experience",
-                "Email": "raven@local"
+                "Name": "BerKetKet"
             }
         ],
+        "BugReportUrl": "https://github.com/BerKetKet/nevermore/issues",
         "Category": "Utilities",
-        "Description": "Budgie Raven sidebar for KDE Plasma 6 featuring dual Notification and Widget tabs, inline hardware gauges, calendar, and media controls.",
+        "Description": "Modular, high-density slide-out control center for KDE Plasma 6 combining system monitoring, notifications, media controls, and quick run tools.",
         "Icon": "sidebar-expand-right",
-        "Id": "org.kde.plasma.budgie.raven",
-        "License": "GPLv3",
-        "Name": "Raven Sidebar",
-        "ServiceTypes": [
-            "Plasma/Applet"
-        ],
-        "Version": "1.0.0"
+        "Id": "io.github.berketket.nevermore",
+        "License": "GPL-3.0-or-later",
+        "Name": "Nevermore",
+        "Version": "0.1.0",
+        "Website": "https://github.com/BerKetKet/nevermore"
     },
     "X-Plasma-API-Minimum-Version": "6.0",
-    "X-Plasma-MainScript": "ui/main.qml",
-    "X-Plasma-NotificationArea": "true",
-    "X-Plasma-Provides": "org.kde.plasma.multimediacontrols,org.kde.plasma.notifications"
+    "X-Plasma-MainScript": "ui/main.qml"
 }
