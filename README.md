@@ -23,9 +23,12 @@
 | **Notification Actions** | *Partial* | Per-notification dismissal works; action buttons planned for Phase 5. |
 | **Notification Timestamps**| *Planned* | Relative timestamps ("5m ago") scheduled for Phase 5. |
 | **Expandable Notifications**| *Planned* | Collapsible long-body notification cards scheduled for Phase 5. |
-| **Command Execution Tab** | **Implemented** | One-shot command runner with exit code detection and output log. |
-| **Command History** | *Partial* | In-memory session history (cleared on plasmoid restart). |
-| **Wayland Clipboard Paste**| **Implemented** | Paste commands from Wayland clipboard (`wl-paste`) with multiline safety check. |
+| **Quick Run Tab** | **Implemented** | One-shot command runner with exit codes, directory tracking, and process group control. |
+| **Process Group Termination** | **Implemented** | Stop button terminates entire process group using `setsid` and `kill -- -PGID`. |
+| **Background Tasks** | **Implemented** | Launch commands as transient systemd user units (`systemd-run --user`). |
+| **Multiline Paste Protection**| **Implemented** | Clipboard paste (`wl-paste`) with multiline preview and confirmation before execution. |
+| **Open in Konsole** | **Implemented** | One-click button to open detached Konsole in the active tab's working directory. |
+| **Command History** | *In-Memory* | Maintained strictly in-memory per session (cleared on plasmoid restart). |
 | **Global Shortcut** | *Manual* | Configured manually via KDE System Settings (`Meta+N`). |
 
 ---
@@ -35,6 +38,7 @@
 * **KDE Plasma:** Version 6.0 or higher (tested on Plasma 6.8.2 on Wayland).
 * **Qt / Frameworks:** Qt 6.x, Kirigami 3 / KF6.
 * **Wayland Clipboard Utility:** `wl-clipboard` (provides `wl-paste` for clipboard actions).
+* **Terminal Emulator:** `konsole` (for external terminal launching).
 * **D-Bus Scripting Tools:** `qt6-tools` or `qt5-tools` (provides `qdbus6` or `qdbus` for panel toggling).
 * **System Monitoring:** `ksystemstats` (default in Plasma 6).
 * **Recommended Fonts:** System default interface font (e.g. Inter, Noto Sans) and system monospace font for code.
@@ -81,6 +85,20 @@ To bind the **`Meta + N`** shortcut to toggle Nevermore:
    ~/.local/bin/toggle-nevermore.sh
    ```
 4. Click the shortcut button, press **`Meta + N`**, and click **Apply**.
+
+---
+
+## 🏃 Quick Run Command Runner Architecture
+
+The **Run** tab provides an honest, reliable one-shot command runner (no fragile pseudo-terminal emulation):
+
+* **Execution Helper (`scripts/nevermore-run`):** Commands are dispatched via a dedicated bash helper that accepts base64-encoded working directory and command strings alongside a cryptographically random sentinel token. This guarantees zero shell-quoting issues and prevents command output spoofing.
+* **Process Group Isolation:** Commands run in isolated sessions via `setsid`. Clicking **Stop** sends `SIGTERM` to the entire process group (`-PGID`), terminating runaway child processes immediately.
+* **Exit Code Tracking:** Real process exit codes are captured. Zero indicates success, while non-zero exit codes are highlighted in red (`[Exit <code\>]`).
+* **Timeout Handling:** Commands exceeding the 30-second timeout exit with status 124, displaying an informative hint and offering an immediate **Open in Konsole** button.
+* **Background Tasks:** Long-running jobs can be launched as transient systemd user services (`systemd-run --user`), providing a systemd unit name that can be monitored live via `journalctl --user -u <unit> -f`.
+* **Safe Paste:** Pasting from clipboard checks for newline characters; multiline snippets require confirmation in a preview dialog before execution.
+* **In-Memory History:** Command logs are maintained in-memory for the duration of the Plasma session.
 
 ---
 
