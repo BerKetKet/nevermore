@@ -66,6 +66,32 @@ Rectangle {
 
     Component.onCompleted: refreshDays()
 
+    onVisibleChanged: {
+        if (visible) {
+            let t = new Date();
+            if (t.getDate() !== today.getDate() || t.getMonth() !== today.getMonth() || t.getFullYear() !== today.getFullYear()) {
+                today = t;
+                displayedYear = t.getFullYear();
+                displayedMonth = t.getMonth();
+                selectedDay = t.getDate();
+                refreshDays();
+            }
+        }
+    }
+
+    Timer {
+        interval: 60000
+        running: calRoot.visible
+        repeat: true
+        onTriggered: {
+            let t = new Date();
+            if (t.getDate() !== calRoot.today.getDate()) {
+                calRoot.today = t;
+                calRoot.refreshDays();
+            }
+        }
+    }
+
     function prevMonth() {
         if (displayedMonth === 0) {
             displayedMonth = 11;
