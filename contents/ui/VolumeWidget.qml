@@ -92,7 +92,7 @@ Rectangle {
                 Item { Layout.fillWidth: true }
 
                 Text {
-                    text: volRoot.hasSink ? (volRoot.sink.muted ? i18n("Muted") : volRoot.outputPercent + "%") : "—"
+                    text: volRoot.hasSink ? (volRoot.sink.muted ? i18n("Muted") : i18n("%1%", volRoot.outputPercent)) : "—"
                     font.family: "SF Hello"
                     font.pixelSize: 12
                     font.bold: true
@@ -161,7 +161,7 @@ Rectangle {
                 Item { Layout.fillWidth: true }
 
                 Text {
-                    text: volRoot.hasSource ? (volRoot.source.muted ? i18n("Muted") : volRoot.inputPercent + "%") : "—"
+                    text: volRoot.hasSource ? (volRoot.source.muted ? i18n("Muted") : i18n("%1%", volRoot.inputPercent)) : "—"
                     font.family: "SF Hello"
                     font.pixelSize: 12
                     font.bold: true

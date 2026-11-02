@@ -112,7 +112,7 @@ Rectangle {
             }
 
             Text {
-                text: monthNames[displayedMonth] + " " + displayedYear
+                text: i18n("%1 %2", monthNames[displayedMonth], displayedYear)
                 font.family: "SF Hello"
                 font.pixelSize: 14
                 font.bold: true

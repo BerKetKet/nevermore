@@ -42,17 +42,17 @@ Rectangle {
     }
 
     function formatBytes(bytes) {
-        if (!bytes || isNaN(bytes)) return "0 GB";
+        if (!bytes || isNaN(bytes)) return i18n("0 GB");
         let gb = bytes / (1024 * 1024 * 1024);
-        return gb.toFixed(1) + " GB";
+        return i18n("%1 GB", gb.toFixed(1));
     }
 
     function formatSpeed(bytesPerSec) {
-        if (!bytesPerSec || isNaN(bytesPerSec) || bytesPerSec <= 0) return "0 KB/s";
+        if (!bytesPerSec || isNaN(bytesPerSec) || bytesPerSec <= 0) return i18n("0 KB/s");
         let mb = bytesPerSec / (1024 * 1024);
-        if (mb >= 1) return mb.toFixed(1) + " MB/s";
+        if (mb >= 1) return i18n("%1 MB/s", mb.toFixed(1));
         let kb = bytesPerSec / 1024;
-        return kb.toFixed(0) + " KB/s";
+        return i18n("%1 KB/s", kb.toFixed(0));
     }
 
     function updateMetrics() {
@@ -141,7 +141,7 @@ Rectangle {
                 }
                 Item { Layout.fillWidth: true }
                 Text {
-                    text: Math.round(hwRoot.cpuUsage) + "%"
+                    text: i18n("%1%", Math.round(hwRoot.cpuUsage))
                     font.family: "SF Hello"
                     font.pixelSize: 12
                     font.bold: true
@@ -188,7 +188,7 @@ Rectangle {
                 }
                 Item { Layout.fillWidth: true }
                 Text {
-                    text: hwRoot.formatBytes(hwRoot.memUsed) + " / " + hwRoot.formatBytes(hwRoot.memTotal) + " (" + Math.round(hwRoot.memPercent) + "%)"
+                    text: i18n("%1 / %2 (%3%)", hwRoot.formatBytes(hwRoot.memUsed), hwRoot.formatBytes(hwRoot.memTotal), Math.round(hwRoot.memPercent))
                     font.family: "SF Hello"
                     font.pixelSize: 11
                     color: "#bf5af2"
@@ -235,7 +235,7 @@ Rectangle {
                 }
                 Item { Layout.fillWidth: true }
                 Text {
-                    text: hwRoot.formatBytes(hwRoot.diskFree) + " free (" + Math.round(hwRoot.diskPercent) + "% used)"
+                    text: i18n("%1 free (%2% used)", hwRoot.formatBytes(hwRoot.diskFree), Math.round(hwRoot.diskPercent))
                     font.family: "SF Hello"
                     font.pixelSize: 11
                     color: "#30d158"

@@ -18,7 +18,7 @@ Item {
             history: [
                 {
                     type: "system",
-                    text: i18n("Raven Quick Terminal — Tab 1\nType a command or click 'Paste & Run'.")
+                    text: i18n("Quick Terminal — Tab 1\nType a command or click 'Paste & Run'.")
                 }
             ],
             cmdHistory: [],
@@ -175,7 +175,7 @@ Item {
             history: [
                 {
                     type: "system",
-                    text: i18n("Raven Quick Terminal — Tab " + nextId)
+                    text: i18n("Quick Terminal — Tab %1", nextId)
                 }
             ],
             cmdHistory: [],
