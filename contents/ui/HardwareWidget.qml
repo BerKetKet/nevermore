@@ -23,17 +23,9 @@ Rectangle {
     property double netDown: 0
     property double netUp: 0
 
-    readonly property bool isActuallyVisible: {
-        if (!hwRoot.visible) return false;
-        if (hwRoot.Window.window) {
-            return hwRoot.Window.window.visible && hwRoot.Window.window.visibility !== Window.Hidden;
-        }
-        return true;
-    }
-
     Sensors.SensorDataModel {
         id: sensorModel
-        enabled: hwRoot.isActuallyVisible
+        enabled: hwRoot.visible
         sensors: [
             "cpu/all/usage",
             "memory/physical/usedPercent",
@@ -64,7 +56,7 @@ Rectangle {
     }
 
     function updateMetrics() {
-        if (!hwRoot.isActuallyVisible) return;
+        if (!hwRoot.visible) return;
 
         let cpu = sensorModel.data(sensorModel.index(0, 0), Sensors.SensorDataModel.Value);
         if (cpu !== undefined && !isNaN(cpu)) cpuUsage = Math.max(0, Math.min(100, cpu));
