@@ -25,6 +25,7 @@ Rectangle {
 
     Sensors.SensorDataModel {
         id: sensorModel
+        enabled: hwRoot.visible
         sensors: [
             "cpu/all/usage",
             "memory/physical/usedPercent",
@@ -37,14 +38,7 @@ Rectangle {
             "network/all/upload"
         ]
 
-        onDataChanged: updateMetrics()
-    }
-
-    Timer {
-        interval: 1500
-        running: true
-        repeat: true
-        onTriggered: hwRoot.updateMetrics()
+        onDataChanged: hwRoot.updateMetrics()
     }
 
     function formatBytes(bytes) {
@@ -62,6 +56,8 @@ Rectangle {
     }
 
     function updateMetrics() {
+        if (!hwRoot.visible) return;
+
         let cpu = sensorModel.data(sensorModel.index(0, 0), Sensors.SensorDataModel.Value);
         if (cpu !== undefined && !isNaN(cpu)) cpuUsage = Math.max(0, Math.min(100, cpu));
 
@@ -88,6 +84,12 @@ Rectangle {
 
         let nu = sensorModel.data(sensorModel.index(0, 8), Sensors.SensorDataModel.Value);
         if (nu !== undefined && !isNaN(nu)) netUp = nu;
+    }
+
+    onVisibleChanged: {
+        if (visible) {
+            updateMetrics();
+        }
     }
 
     Component.onCompleted: updateMetrics()
@@ -225,7 +227,7 @@ Rectangle {
                     color: Qt.rgba(1, 1, 1, 0.7)
                 }
                 Text {
-                    text: i18n("Disk Storage")
+                    text: i18n("Storage (All Disks)")
                     font.family: "SF Hello"
                     font.pixelSize: 12
                     font.bold: true
