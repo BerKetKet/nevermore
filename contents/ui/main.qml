@@ -8,8 +8,21 @@ import org.kde.notificationmanager as NM
 PlasmoidItem {
     id: root
 
-    // Force full rich representation
-    preferredRepresentation: fullRepresentation
+    compactRepresentation: MouseArea {
+        id: compactRoot
+        implicitWidth: Kirigami.Units.gridUnit * 2
+        implicitHeight: Kirigami.Units.gridUnit * 2
+        hoverEnabled: true
+
+        Kirigami.Icon {
+            anchors.centerIn: parent
+            implicitWidth: Kirigami.Units.iconSizes.smallMedium
+            implicitHeight: Kirigami.Units.iconSizes.smallMedium
+            source: "sidebar-expand-right"
+        }
+
+        onClicked: root.expanded = !root.expanded
+    }
 
     NM.Notifications {
         id: sharedNotifModel
@@ -41,6 +54,8 @@ PlasmoidItem {
         Layout.minimumWidth: 360
         Layout.preferredWidth: 380
         Layout.maximumWidth: 420
+        Layout.minimumHeight: 600
+        Layout.preferredHeight: 750
         Layout.fillHeight: true
 
         color: "#18181b"
