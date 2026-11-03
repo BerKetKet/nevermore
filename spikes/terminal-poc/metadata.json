@@ -1,0 +1,19 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "berketket@users.noreply.github.com",
+                "Name": "Nevermore Team"
+            }
+        ],
+        "Category": "Utilities",
+        "Description": "Nevermore Terminal Spike Proof of Concept",
+        "Icon": "utilities-terminal",
+        "Id": "io.github.berketket.nevermore.spike",
+        "Name": "Nevermore Terminal Spike",
+        "Version": "0.1.0",
+        "Website": "https://github.com/BerKetKet/nevermore"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}
