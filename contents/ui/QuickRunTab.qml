@@ -902,30 +902,36 @@ Item {
                 spacing: 6
 
                 // Header: [ Icon ] Background Tasks (count) [ chevron ]
-                RowLayout {
+                Item {
                     Layout.fillWidth: true
-                    spacing: 6
+                    implicitHeight: taskHeaderRow.implicitHeight
 
-                    Kirigami.Icon {
-                        source: "system-switch-user"
-                        implicitWidth: 14
-                        implicitHeight: 14
-                        color: "#bf5af2"
-                    }
+                    RowLayout {
+                        id: taskHeaderRow
+                        anchors.fill: parent
+                        spacing: 6
 
-                    Text {
-                        text: i18n("Background Tasks (%1)", termRoot.bgTasks.length)
-                        font.family: "SF Hello"
-                        font.pixelSize: 11
-                        font.bold: true
-                        color: termRoot.bgTasks.length > 0 ? "#ffffff" : Qt.rgba(1, 1, 1, 0.6)
-                        Layout.fillWidth: true
-                    }
+                        Kirigami.Icon {
+                            source: "system-switch-user"
+                            implicitWidth: 14
+                            implicitHeight: 14
+                            color: "#bf5af2"
+                        }
 
-                    Text {
-                        text: termRoot.tasksExpanded ? "▲" : "▼"
-                        font.pixelSize: 10
-                        color: Qt.rgba(1, 1, 1, 0.5)
+                        Text {
+                            text: i18n("Background Tasks (%1)", termRoot.bgTasks.length)
+                            font.family: "SF Hello"
+                            font.pixelSize: 11
+                            font.bold: true
+                            color: termRoot.bgTasks.length > 0 ? "#ffffff" : Qt.rgba(1, 1, 1, 0.6)
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            text: termRoot.tasksExpanded ? "▲" : "▼"
+                            font.pixelSize: 10
+                            color: Qt.rgba(1, 1, 1, 0.5)
+                        }
                     }
 
                     MouseArea {
