@@ -34,6 +34,14 @@ This document outlines the structured development phases and architectural roadm
 - Runtime working directory resolution and monotonic tab identification.
 - Long-running background task launcher (`systemd-run --user`).
 
+### Phase 2e: Single Instance, Single Surface Architecture
+- Eliminate dual-instance split: exactly one plasmoid instance resides on the desktop, placed in the right autohide panel.
+- Pure popup architecture: unconditionally set `preferredRepresentation: compactRepresentation`, forcing the entire control center to render exclusively within Plasma's native floating dialog (`PlasmaQuick::Dialog`, `expanded` state).
+- Completely eliminate Wayland layer-shell keyboard interactivity hacks (`AcceptingInputStatus`) and location-based representation branching.
+- Compact trigger interaction: edge hover reveals the autohide panel, hovering the compact icon for ~150ms expands the popup dialog, with click toggle as fallback.
+- Native shortcut toggle: `activationTogglesExpanded: true` natively toggles `root.expanded` when `Meta+N` is pressed, guaranteeing identical surface appearance and behavior across shortcut and hover triggers.
+- Installer streamlining: eliminate external toggle scripts (`scripts/toggle-nevermore.sh`), desktop entries, and D-Bus shortcut injection; make installer minimal and non-destructive.
+
 ### Phase 3: Theme Tokens and Reusable Components
 - Centralized `Theme.qml` singleton defining system palette tokens, spacing, radiuses, and transition timings.
 - Component library: `Card.qml`, `Gauge.qml`, `IconButton.qml`, and `SectionHeader.qml`.

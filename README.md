@@ -11,6 +11,8 @@
 | Feature | Status | Notes |
 | :--- | :--- | :--- |
 | **Segmented Tab Flyout** | **Implemented** | Three dedicated tabs: Widgets, Notifications, and Run. |
+| **Single-Surface Architecture** | **Implemented** | Control center rendered strictly inside native zero-strut popup dialog (`PlasmaQuick::Dialog`). Zero desktop window shift. |
+| **Edge Hover & Trigger** | **Implemented** | Right screen edge unhides panel; hovering compact icon (~150ms) expands popup (click toggles fallback). |
 | **Interactive Calendar** | **Implemented** | Full 7x6 month grid with month navigation and current day highlight. |
 | **Calendar Reminders & Tasks** | *Deferred* | Reminders and task synchronization held off pending future Google Calendar integration. |
 | **Overall CPU Telemetry** | **Implemented** | Aggregate CPU load percentage via `org.kde.ksysguard.sensors`. |
@@ -30,7 +32,7 @@
 | **Multiline Paste Protection**| **Implemented** | Clipboard paste (`wl-paste`) with modal preview dialog and direct execution. |
 | **Open in Konsole** | **Implemented** | One-click button to open detached Konsole in the active tab's working directory. |
 | **Command History** | *In-Memory* | Maintained strictly in-memory per session (cleared on plasmoid restart). |
-| **Global Shortcut** | **Automated** | Zero-strut overlay toggle registered via `org.kde.kglobalaccel` D-Bus (`Meta+N`); eliminates window shifting. |
+| **Global Shortcut** | **Native** | Native Plasma widget shortcut (`Meta+N`) toggles popup dialog without window shifts (0px shift). |
 
 ---
 
@@ -40,7 +42,6 @@
 * **Qt / Frameworks:** Qt 6.x, Kirigami 3 / KF6.
 * **Wayland Clipboard Utility:** `wl-clipboard` (provides `wl-paste` for clipboard actions).
 * **Terminal Emulator:** `konsole` (for external terminal launching).
-* **D-Bus Scripting Tools:** `qt6-tools` or `qt5-tools` (provides `qdbus6` or `qdbus` for panel toggling).
 * **System Monitoring:** `ksystemstats` (default in Plasma 6).
 * **Recommended Fonts:** System default interface font (e.g. Inter, Noto Sans) and system monospace font for code.
 
@@ -73,21 +74,26 @@ cd ~/projects/nevermore
 ./install.sh --uninstall
 ```
 
+### Reloading Plasma Shell (Optional)
+
+To flush Plasma's QML bytecode cache and reload plasmashell after updating:
+
+```bash
+./install.sh --restart-shell
+```
+
 ---
 
 ## ⌨️ Configuring the Global Shortcut (Meta + N)
 
-`./install.sh` automatically registers the global shortcut `Meta+N` on KDE Plasma 6 Wayland via the `org.kde.kglobalaccel` D-Bus interface (`doRegister` and `setShortcutKeys`), binding it directly to `toggle-nevermore.desktop`.
+Nevermore leverages KDE Plasma's native widget shortcut mechanism:
 
-If automated registration is skipped (e.g. headless installation or missing `python-gobject`), you can configure the shortcut manually in KDE System Settings:
+1. Right-click the **Nevermore** icon in your right panel (or top panel).
+2. Select **Configure Nevermore...** (or press `Alt+D, S`).
+3. In the settings dialog, click **Keyboard Shortcuts**.
+4. Set the shortcut to **`Meta + N`** and click **Apply**.
 
-1. Open **System Settings** -> **Keyboard** -> **Shortcuts**.
-2. Locate **Toggle Nevermore Control Center** under Applications (or click **Add New** -> **Command or Script**).
-3. If adding manually as a custom script, set the command to:
-   ```bash
-   ~/.local/bin/toggle-nevermore.sh
-   ```
-4. Click the shortcut button, press **`Meta + N`**, and click **Apply**.
+Once configured, pressing `Meta+N` natively toggles the popup dialog (`expanded` state). Because the dialog renders as a floating popup surface rather than a strutted panel surface, existing desktop and tiled windows do not shift or resize (0px shift).
 
 ---
 
@@ -108,9 +114,10 @@ The **Run** tab provides an honest, reliable one-shot command runner (no fragile
 
 ## ⚠️ Known Issues & Technical Notes
 
+* **Single-Surface Architecture:** In KDE Plasma 6 Wayland, panels are strutted layer-shell surfaces whose keyboard interactivity defaults to None. Nevermore addresses this by rendering exclusively within Plasma's native floating dialog (`PlasmaQuick::Dialog`), providing full physical keyboard input and zero desktop window shift across both `Meta+N` and edge hover activation.
 * **Disk Utilization Sensor:** Nevermore currently tracks aggregate filesystem utilization across all mounts via the sensor `disk/all/usedPercent` rather than partition-specific UUIDs, ensuring compatibility across differing partition setups.
 * **Hardware Visibility & Panel Autohide:** Measurements on Plasma 6 Wayland confirmed that plasmoids embedded in panels report `Window.window` as `null` during regular embedded operation, and panel autohide translations do not toggle `QWindow` visibility state. Consequently, hardware sensor polling is gated strictly by component visibility (`hwRoot.visible`), pausing telemetry queries when navigating away from the Widgets tab.
-* **Continuous Integration qmllint Scope:** Continuous Integration `qmllint` runs on headless Ubuntu runners where KF6 and Plasma QML modules are not installed in system paths; CI runs `qmllint` with unresolved type and missing property checks disabled (`--unresolved-type disable --missing-property disable`). In CI, `qmllint` acts as a syntax, scoping, and structural check rather than a complete type-system verification.
+* **Continuous Integration qmllint Scope:** Continuous Integration `qmllint` runs on headless Ubuntu runners where KF6 and Plasma QML modules are not installed in system paths; CI runs `qmllint` with unresolved type and missing property checks disabled (`--import disable --unresolved-type disable --missing-property disable --unqualified disable`). In CI, `qmllint` acts as a syntax, scoping, and structural check rather than a complete type-system verification.
 * **Command Persistence:** Command runner history is currently maintained in memory during the active session. If plasmashell restarts, command runner tabs and history reset to the default workspace.
 
 ---

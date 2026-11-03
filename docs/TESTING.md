@@ -1,6 +1,6 @@
 # 🧪 Nevermore Control Center — Manual Smoke Test Checklist
 
-This document provides a 10-minute manual verification script for human QA and testers on KDE Plasma 6 (Wayland). It walks through a clean setup, verifying all interactive control center capabilities, edge cases, and safety mechanisms.
+This document provides a 10-minute manual verification script for human QA and testers on KDE Plasma 6 (Wayland). It walks through a clean setup, verifying all interactive control center capabilities, single-surface architecture, edge cases, and safety mechanisms.
 
 ---
 
@@ -12,13 +12,12 @@ This document provides a 10-minute manual verification script for human QA and t
    cd ~/projects/nevermore
    ./install.sh --dev
    ```
-2. **Add Widget to Desktop or Panel:**
-   - Right-click your desktop or panel -> **Add Widgets...**
-   - Search for **Nevermore** and drag it to your panel or desktop.
-   - Alternatively, use the slide-out sidebar toggle script:
-     ```bash
-     ~/.local/bin/toggle-nevermore.sh
-     ```
+2. **Add Widget to Right Edge Panel:**
+   - Right-click your right-edge autohide panel -> **Add Widgets...**
+   - Search for **Nevermore** and drag it onto the panel.
+3. **Configure Global Shortcut (Meta + N):**
+   - Right-click the Nevermore icon -> **Configure Nevermore...** -> **Keyboard Shortcuts**.
+   - Set shortcut to `Meta+N` and click **Apply**.
 
 ---
 
@@ -26,27 +25,31 @@ This document provides a 10-minute manual verification script for human QA and t
 
 | ID | Feature | Test Steps | Expected Behavior |
 | :--- | :--- | :--- | :--- |
-| **T01** | **Global Shortcut / Zero-Strut Overlay** | Press `Meta+N` on the keyboard. | The Nevermore control center opens as a native overlay dialog with zero struts. Open desktop windows do NOT shift or resize (0px shift). Pressing `Meta+N` again closes it. |
-| **T02** | **CLI Toggle Helper** | In a terminal, run `~/.local/bin/toggle-nevermore.sh`. | Outputs toggled state message; panel toggles without error. |
-| **T03** | **Tab Navigation** | Click on the **Widgets**, **Notifications**, and **Run** header tabs. | Active tab switches immediately. Segmented control background highlight follows selection. |
-| **T04** | **Interactive Calendar** | 1. View Calendar widget.<br>2. Click **<** and **>** month arrows.<br>3. Click **Today** button. | Current date is highlighted in blue. Month navigation transitions accurately. Clicking "Today" snaps back to the current month. |
-| **T05** | **Hardware Telemetry** | Observe CPU, RAM, Disk, and Network gauges on the Widgets tab. | Telemetry reflects real system utilization. Values update smoothly. Polling pauses when switching away to another tab. |
-| **T06** | **Media Controls & Multi-Player Switcher** | 1. Start media in two players (e.g. Spotify, browser).<br>2. Observe multi-player switcher header (`‹ Player Name (1/2) ›`).<br>3. Click `‹` and `›` to cycle active players.<br>4. Observe track title, artist, album art, play/pause. | Switcher displays active player identity and count. Cycling immediately updates active track and controls. Controls disable gracefully when no media player is active. |
-| **T07** | **Volume & Audio Sliders** | 1. Drag Master Volume slider.<br>2. Click Mute icon.<br>3. Drag Microphone Volume slider. | Audio volume changes smoothly with drag. Mute icon toggles mute state. Sliders disable gracefully if audio sink/source is absent. |
-| **T08** | **Notification Feed** | Trigger a notification (e.g. `notify-send "Test" "Sample notification"`). Switch to **Notifications** tab. | Notification appears in list with summary and body. Badge counter on Notifications tab increments. |
-| **T09** | **Notification Dismissal** | Click the close button on an individual notification card. | Specific notification is dismissed from list and counter updates. |
-| **T10** | **Do Not Disturb & Clear All**| 1. Toggle **Do Not Disturb** switch.<br>2. Click **Clear All** button. | DND toggles notification server inhibition. "Clear All" dismisses all notifications and clears list. |
-| **T11** | **Quick Run Inline Blinking Prompt** | 1. Switch to **Run** tab.<br>2. Observe inline green prompt (`~/path ❯ `) inside terminal buffer with blinking block cursor (█).<br>3. Click empty terminal space to verify active focus.<br>4. Type `echo "Nevermore Hello"` and press Enter. | Command executes, prompt hides during execution, output displays `Nevermore Hello` followed by checkmark, and inline prompt refocuses. |
-| **T12** | **Directory Tracking** | Type `cd /tmp` and press Enter. Then run `pwd`. | Working directory persists across commands; prompt displays `/tmp ❯`, `pwd` outputs `/tmp`. |
-| **T13** | **Exit Code Display** | 1. Run `true`.<br>2. Run `false` or `bash -c 'exit 42'`. | Success (`true`) displays green indicator. Failure displays red `[Exit 42]` badge. |
-| **T14** | **Process Group Stop** | 1. Run `sleep 30`.<br>2. While running, click the **Stop** button. | Command execution halts immediately; output indicates `[Terminated by user]`; UI returns to ready state. |
-| **T15** | **Timeout Handling** | Run a command exceeding 30s without stopping it. | At 30s, command is terminated with exit code 124, timeout warning, and an "Open in Konsole" suggestion. |
-| **T16** | **Paste & Multiline Safety** | 1. Single-line clipboard: Click **Paste**.<br>2. Multi-line clipboard: Click **Paste**. | Single-line inserts into inlineInput and focuses. Multi-line triggers modal preview dialog; **Cancel** aborts, **Run** executes safely. |
-| **T17** | **Open in Konsole** | Click the **Open in Konsole** button in the header. | A standalone Konsole window opens detached in the active tab's current working directory. Repeating opens another independent window. |
-| **T18** | **Terminal Tabs** | 1. Click **+** to add a new tab.<br>2. Switch between Tab 1 and Tab 2.<br>3. Close Tab 2. | New tab initializes with independent history and directory. Switching preserves buffer contents. Closing removes tab. |
-| **T19** | **Background Tasks — Success** | Run a fast task in background. Expand **Tasks** collapsible. | Unit appears in Tasks list, state transitions from `running` to `done (0)`. Clicking **Logs** shows journalctl output. |
-| **T20** | **Background Tasks — Failure** | Run `false` or `exit 1` in background. Expand **Tasks**. | Unit displays distinct red `failed (1)` badge. Clicking **Logs** shows failure trace. Clicking **Dismiss** clears the unit. |
-| **T21** | **Background Tasks — Stop** | Run `sleep 60` in background. Expand **Tasks**. | Unit shows green `running` badge with **Stop** button. Clicking **Stop** halts unit immediately and removes it from running list. |
+| **T01** | **Single Instance Verification** | Query Plasma Shell panel applets via D-Bus script. | Exactly one instance of `io.github.berketket.nevermore` exists across all panels (residing in the right autohide panel). |
+| **T02** | **Edge Hover & 150ms Trigger** | Move mouse cursor to right screen edge to reveal autohide panel, then hover the Nevermore compact icon for ~150ms. | Hovering unhides panel; after 150ms hover delay, the full control center popup dialog expands. Clicking the icon immediately toggles expansion. |
+| **T03** | **Global Shortcut Toggle** | Press `Meta+N` on the physical keyboard. | The Nevermore control center popup dialog toggles open/closed via native `activationTogglesExpanded`. |
+| **T04** | **Surface & Visual Identity** | Open via edge hover, observe UI. Close and open via `Meta+N`. | Both activation methods display the exact same floating popup dialog (`PlasmaQuick::Dialog`). No dual representation or styling divergence. |
+| **T05** | **Zero-Strut Window Geometry** | Open a window (e.g. Chrome or terminal) adjacent to the right edge. Press `Meta+N`. | The popup appears as a floating overlay above the window. Open windows do NOT shift, resize, or reflow (0px shift). |
+| **T06** | **Popup Keyboard Interactivity** | Open Nevermore via `Meta+N` or edge hover, navigate to **Run** tab, and type directly on the keyboard. | Physical keystrokes are routed immediately to the inline terminal prompt without requiring manual focus workarounds. |
+| **T07** | **Tab Navigation** | Click on the **Widgets**, **Notifications**, and **Run** header tabs. | Active tab switches immediately. Segmented control background highlight follows selection. |
+| **T08** | **Interactive Calendar** | 1. View Calendar widget.<br>2. Click **<** and **>** month arrows.<br>3. Click **Today** button. | Current date is highlighted in blue. Month navigation transitions accurately. Clicking "Today" snaps back to the current month. |
+| **T09** | **Hardware Telemetry** | Observe CPU, RAM, Disk, and Network gauges on the Widgets tab. | Telemetry reflects real system utilization. Values update smoothly. Polling pauses when switching away to another tab. |
+| **T10** | **Media Controls & Multi-Player Switcher** | 1. Start media in two players (e.g. Spotify, browser).<br>2. Observe multi-player switcher header (`‹ Player Name (1/2) ›`).<br>3. Click `‹` and `›` to cycle active players.<br>4. Observe track title, artist, album art, play/pause. | Switcher displays active player identity and count. Cycling immediately updates active track and controls. Controls disable gracefully when no media player is active. |
+| **T11** | **Volume & Audio Sliders** | 1. Drag Master Volume slider.<br>2. Click Mute icon.<br>3. Drag Microphone Volume slider. | Audio volume changes smoothly with drag. Mute icon toggles mute state. Sliders disable gracefully if audio sink/source is absent. |
+| **T12** | **Notification Feed** | Trigger a notification (e.g. `notify-send "Test" "Sample notification"`). Switch to **Notifications** tab. | Notification appears in list with summary and body. Badge counter on Notifications tab increments. |
+| **T13** | **Notification Dismissal** | Click the close button on an individual notification card. | Specific notification is dismissed from list and counter updates. |
+| **T14** | **Do Not Disturb & Clear All**| 1. Toggle **Do Not Disturb** switch.<br>2. Click **Clear All** button. | DND toggles notification server inhibition. "Clear All" dismisses all notifications and clears list. |
+| **T15** | **Quick Run Inline Blinking Prompt** | 1. Switch to **Run** tab.<br>2. Observe inline green prompt (`~/path ❯ `) inside terminal buffer with blinking block cursor (█).<br>3. Click empty terminal space to verify active focus.<br>4. Type `echo "Nevermore Hello"` and press Enter. | Command executes, prompt hides during execution, output displays `Nevermore Hello` followed by checkmark, and inline prompt refocuses. |
+| **T16** | **Directory Tracking** | Type `cd /tmp` and press Enter. Then run `pwd`. | Working directory persists across commands; prompt displays `/tmp ❯`, `pwd` outputs `/tmp`. |
+| **T17** | **Exit Code Display** | 1. Run `true`.<br>2. Run `false` or `bash -c 'exit 42'`. | Success (`true`) displays green indicator. Failure displays red `[Exit 42]` badge. |
+| **T18** | **Process Group Stop** | 1. Run `sleep 30`.<br>2. While running, click the **Stop** button. | Command execution halts immediately; output indicates `[Terminated by user]`; UI returns to ready state. |
+| **T19** | **Timeout Handling** | Run a command exceeding 30s without stopping it. | At 30s, command is terminated with exit code 124, timeout warning, and an "Open in Konsole" suggestion. |
+| **T20** | **Paste & Multiline Safety** | 1. Single-line clipboard: Click **Paste**.<br>2. Multi-line clipboard: Click **Paste**. | Single-line inserts into inlineInput and focuses. Multi-line triggers modal preview dialog; **Cancel** aborts, **Run** executes safely. |
+| **T21** | **Open in Konsole** | Click the **Open in Konsole** button in the header. | A standalone Konsole window opens detached in the active tab's current working directory. Repeating opens another independent window. |
+| **T22** | **Terminal Tabs** | 1. Click **+** to add a new tab.<br>2. Switch between Tab 1 and Tab 2.<br>3. Close Tab 2. | New tab initializes with independent history and directory. Switching preserves buffer contents. Closing removes tab. |
+| **T23** | **Background Tasks — Success** | Run a fast task in background. Expand **Tasks** collapsible. | Unit appears in Tasks list, state transitions from `running` to `done (0)`. Clicking **Logs** shows journalctl output. |
+| **T24** | **Background Tasks — Failure** | Run `false` or `exit 1` in background. Expand **Tasks**. | Unit displays distinct red `failed (1)` badge. Clicking **Logs** shows failure trace. Clicking **Dismiss** clears the unit. |
+| **T25** | **Background Tasks — Stop** | Run `sleep 60` in background. Expand **Tasks**. | Unit shows green `running` badge with **Stop** button. Clicking **Stop** halts unit immediately and removes it from running list. |
 
 ---
 
@@ -56,24 +59,28 @@ Copy and fill this table for test reports:
 
 | Feature | Steps | Expected | Result (Pass/Fail) | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **T01: Global Shortcut** | Press `Meta+N` | Panel toggles | | |
-| **T02: CLI Toggle** | Run `toggle-nevermore.sh` | Panel toggles | | |
-| **T03: Tab Switching** | Click Widgets / Notifications / Run | Switched view | | |
-| **T04: Calendar Grid** | Navigate months, click Today | Correct dates | | |
-| **T05: Hardware Telemetry** | Check CPU, RAM, Disk, Net | Live gauges | | |
-| **T06: Media Controls** | Play/pause external music | Controls work | | |
-| **T07: Volume Sliders** | Drag master/mic sliders, mute | Audio adjusts | | |
-| **T08: Notifications Feed**| Send notification, check tab | Card displayed | | |
-| **T09: Notification Dismiss** | Dismiss single notification | Card removed | | |
-| **T10: DND & Clear All** | Toggle DND, Clear All | Feed cleared | | |
-| **T11: Command Execution** | Run `echo test` in Run tab | Output shown | | |
-| **T12: Directory Tracking**| Run `cd /tmp && pwd` | CWD tracked | | |
-| **T13: Exit Code Display**| Run `exit 42` | Red `[Exit 42]` | | |
-| **T14: Process Group Stop**| Run `sleep 30`, click Stop | Terminated | | |
-| **T15: Command Timeout** | Let command run > 30s | Exit 124 hint | | |
-| **T16: Multiline Paste** | Paste multi-line script | Modal dialog | | |
-| **T17: Open in Konsole** | Click Konsole button | Konsole opens | | |
-| **T18: Terminal Tabs** | Add/switch/close tabs | Independent | | |
-| **T19: Tasks (Success)** | Run `--bg` succeeding command | `done (0)` | | |
-| **T20: Tasks (Failure)** | Run `--bg false` | `failed (1)` | | |
-| **T21: Tasks (Stop)** | Run `--bg sleep 60`, click Stop | Unit stopped | | |
+| **T01: Single Instance** | Query D-Bus panel applets | 1 instance | | |
+| **T02: Edge Hover & 150ms Trigger**| Hover right edge & icon | Popup expands | | |
+| **T03: Global Shortcut** | Press `Meta+N` | Popup toggles | | |
+| **T04: Surface Identity** | Compare hover vs Meta+N | Identical popup | | |
+| **T05: Zero-Strut Geometry** | Open window, toggle popup | 0px window shift | | |
+| **T06: Keyboard Interactivity** | Type in Run tab | Keystrokes work | | |
+| **T07: Tab Switching** | Click Widgets / Notifications / Run | Switched view | | |
+| **T08: Calendar Grid** | Navigate months, click Today | Correct dates | | |
+| **T09: Hardware Telemetry** | Check CPU, RAM, Disk, Net | Live gauges | | |
+| **T10: Media Controls** | Play/pause external music | Controls work | | |
+| **T11: Volume Sliders** | Drag master/mic sliders, mute | Audio adjusts | | |
+| **T12: Notifications Feed**| Send notification, check tab | Card displayed | | |
+| **T13: Notification Dismiss** | Dismiss single notification | Card removed | | |
+| **T14: DND & Clear All** | Toggle DND, Clear All | Feed cleared | | |
+| **T15: Command Execution** | Run `echo test` in Run tab | Output shown | | |
+| **T16: Directory Tracking**| Run `cd /tmp && pwd` | CWD tracked | | |
+| **T17: Exit Code Display**| Run `exit 42` | Red `[Exit 42]` | | |
+| **T18: Process Group Stop**| Run `sleep 30`, click Stop | Terminated | | |
+| **T19: Command Timeout** | Let command run > 30s | Exit 124 hint | | |
+| **T20: Multiline Paste** | Paste multi-line script | Modal dialog | | |
+| **T21: Open in Konsole** | Click Konsole button | Konsole opens | | |
+| **T22: Terminal Tabs** | Add/switch/close tabs | Independent | | |
+| **T23: Tasks (Success)** | Run `--bg` succeeding command | `done (0)` | | |
+| **T24: Tasks (Failure)** | Run `--bg false` | `failed (1)` | | |
+| **T25: Tasks (Stop)** | Run `--bg sleep 60`, click Stop | Unit stopped | | |
