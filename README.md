@@ -84,6 +84,35 @@ To flush Plasma's QML bytecode cache and reload plasmashell after updating:
 
 ---
 
+## 📐 Panel Setup & Edge Geometry
+
+Nevermore renders exclusively inside a native Plasma popup dialog (`PlasmaQuick::Dialog`). Under KDE Plasma 6, popup dialogs anchor directly against the inner boundary of the parent panel.
+
+If your right panel has excess thickness (for instance, a panel set to 380 px from a legacy full-width sidebar configuration), the popup dialog will sit 380 px inwards from the monitor bezel, leaving a wide void between the dialog and screen edge.
+
+### Recommended Panel Configuration
+For a clean slide-out edge aesthetic, place Nevermore in a thin autohide edge panel:
+* **Recommended Thickness:** `36 px` to `48 px` (default `40 px`).
+* **Hiding Mode:** `Auto Hide` (reveals when hovering the screen edge).
+* **Length:** Custom or Fit Content.
+
+### Setting Up the Panel in Edit Mode
+1. Right-click the desktop background or any existing panel and choose **Enter Edit Mode** (or press `Meta+D, E`).
+2. If configuring an existing right-edge panel:
+   * Click on the right panel to display its configuration toolbar.
+   * Drag the **Thickness** slider to adjust thickness to **`40 px`** (recommended 36–48 px).
+   * Under **Visibility**, select **Auto Hide**.
+3. If creating a new right-edge panel:
+   * In Edit Mode, click **Add Panel** -> **Empty Panel**.
+   * Drag the panel to the right screen edge.
+   * Set thickness to **`40 px`** and visibility to **Auto Hide**.
+   * Click **Add Widgets...**, search for **Nevermore**, and drag it into the panel.
+4. Click **Close** or press `Escape` to exit Edit Mode.
+
+With this setup, moving your mouse cursor to the right screen edge reveals the thin panel; hovering the Nevermore icon expands the full dashboard flush against the right edge.
+
+---
+
 ## ⌨️ Configuring the Global Shortcut (Meta + N)
 
 Nevermore leverages KDE Plasma's native widget shortcut mechanism:

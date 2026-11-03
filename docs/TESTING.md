@@ -12,10 +12,12 @@ This document provides a 10-minute manual verification script for human QA and t
    cd ~/projects/nevermore
    ./install.sh --dev
    ```
-2. **Add Widget to Right Edge Panel:**
-   - Right-click your right-edge autohide panel -> **Add Widgets...**
-   - Search for **Nevermore** and drag it onto the panel.
-3. **Configure Global Shortcut (Meta + N):**
+2. **Panel Setup (Right Edge):**
+   - Ensure you have a thin autohide panel on the right edge (recommended thickness: 36–48 px, default 40 px).
+   - If adjusting an existing panel: Right-click desktop -> **Enter Edit Mode** -> click right panel -> set thickness to 40 px and visibility to **Auto Hide** -> press `Escape`.
+3. **Add Widget to Right Edge Panel:**
+   - In Edit Mode or by right-clicking the panel: **Add Widgets...** -> drag **Nevermore** onto the right-edge panel.
+4. **Configure Global Shortcut (Meta + N):**
    - Right-click the Nevermore icon -> **Configure Nevermore...** -> **Keyboard Shortcuts**.
    - Set shortcut to `Meta+N` and click **Apply**.
 
@@ -37,8 +39,10 @@ This document provides a 10-minute manual verification script for human QA and t
 | **T10** | **Media Controls & Multi-Player Switcher** | 1. Start media in two players (e.g. Spotify, browser).<br>2. Observe multi-player switcher header (`‹ Player Name (1/2) ›`).<br>3. Click `‹` and `›` to cycle active players.<br>4. Observe track title, artist, album art, play/pause. | Switcher displays active player identity and count. Cycling immediately updates active track and controls. Controls disable gracefully when no media player is active. |
 | **T11** | **Volume & Audio Sliders** | 1. Drag Master Volume slider.<br>2. Click Mute icon.<br>3. Drag Microphone Volume slider. | Audio volume changes smoothly with drag. Mute icon toggles mute state. Sliders disable gracefully if audio sink/source is absent. |
 | **T12** | **Notification Feed** | Trigger a notification (e.g. `notify-send "Test" "Sample notification"`). Switch to **Notifications** tab. | Notification appears in list with summary and body. Badge counter on Notifications tab increments. |
-| **T13** | **Notification Dismissal** | Click the close button on an individual notification card. | Specific notification is dismissed from list and counter updates. |
-| **T14** | **Do Not Disturb & Clear All**| 1. Toggle **Do Not Disturb** switch.<br>2. Click **Clear All** button. | DND toggles notification server inhibition. "Clear All" dismisses all notifications and clears list. |
+| **T13** | **Notification Action Click-Through** | Trigger notification with action (`notify-send -A default=Open "Alert" "Body"`). Click card body. | Default action executes (client prints `default`), notification closes, and Nevermore collapses (`root.expanded = false`). |
+| **T14** | **Notification Dismiss Isolation** | Click the **✕** button on an action-enabled notification. | Notification is dismissed without triggering the default action. Nevermore remains open. |
+| **T15** | **App Raising Fallback** | Trigger notification from open app without actions (`notify-send -h string:desktop-entry:google-chrome "Title" "Body"`). Click card body. | KWin activates the app's window and Nevermore collapses. |
+| **T16** | **Do Not Disturb & Clear All**| 1. Toggle **Do Not Disturb** switch.<br>2. Click **Clear All** button. | DND toggles notification server inhibition. "Clear All" dismisses all notifications and clears list without activating card actions. |
 | **T15** | **Quick Run Inline Blinking Prompt** | 1. Switch to **Run** tab.<br>2. Observe inline green prompt (`~/path ❯ `) inside terminal buffer with blinking block cursor (█).<br>3. Click empty terminal space to verify active focus.<br>4. Type `echo "Nevermore Hello"` and press Enter. | Command executes, prompt hides during execution, output displays `Nevermore Hello` followed by checkmark, and inline prompt refocuses. |
 | **T16** | **Directory Tracking** | Type `cd /tmp` and press Enter. Then run `pwd`. | Working directory persists across commands; prompt displays `/tmp ❯`, `pwd` outputs `/tmp`. |
 | **T17** | **Exit Code Display** | 1. Run `true`.<br>2. Run `false` or `bash -c 'exit 42'`. | Success (`true`) displays green indicator. Failure displays red `[Exit 42]` badge. |
