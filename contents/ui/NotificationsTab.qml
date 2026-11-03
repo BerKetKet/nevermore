@@ -9,6 +9,8 @@ Item {
     Layout.fillWidth: true
     Layout.fillHeight: true
 
+    signal actionInvoked()
+
     property var notifModel: null
     readonly property int notifCount: notifModel ? notifModel.count : 0
     readonly property bool isDnd: NM.Server.inhibited
@@ -164,15 +166,32 @@ Item {
                     width: notifList.width
                     implicitHeight: notifCol.implicitHeight + 20
                     radius: 12
-                    color: Qt.rgba(1, 1, 1, 0.05)
-                    border.color: Qt.rgba(1, 1, 1, 0.08)
+                    readonly property bool hasAction: model.hasDefaultAction === true
+                    color: (hasAction && cardMouse.containsMouse) ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.05)
+                    border.color: (hasAction && cardMouse.containsMouse) ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.08)
                     border.width: 1
+
+                    MouseArea {
+                        id: cardMouse
+                        anchors.fill: parent
+                        hoverEnabled: notifItem.hasAction
+                        cursorShape: notifItem.hasAction ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        z: 0
+
+                        onClicked: {
+                            if (notifItem.hasAction && notifRoot.notifModel) {
+                                notifRoot.notifModel.invokeDefaultAction(notifRoot.notifModel.index(index, 0), NM.Notifications.Close);
+                                notifRoot.actionInvoked();
+                            }
+                        }
+                    }
 
                     ColumnLayout {
                         id: notifCol
                         anchors.fill: parent
                         anchors.margins: 10
                         spacing: 6
+                        z: 1
 
                         // Header: Icon, App Name, Time, Close
                         RowLayout {
@@ -197,6 +216,7 @@ Item {
 
                             // Dismiss button
                             Rectangle {
+                                z: 2
                                 implicitWidth: 20
                                 implicitHeight: 20
                                 radius: 10
@@ -214,7 +234,8 @@ Item {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
+                                    onClicked: function(mouse) {
+                                        mouse.accepted = true;
                                         if (notifRoot.notifModel) {
                                             notifRoot.notifModel.close(notifRoot.notifModel.index(index, 0));
                                         }

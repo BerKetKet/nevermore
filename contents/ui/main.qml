@@ -295,6 +295,7 @@ PlasmoidItem {
                     anchors.fill: parent
                     notifModel: sharedNotifModel
                     visible: root.activeTab === 1
+                    onActionInvoked: root.expanded = false
                 }
 
                 // Run View
