@@ -17,6 +17,32 @@ Rectangle {
         id: mprisModel
     }
 
+    property int playerCount: 0
+
+    function updatePlayerCount() {
+        playerCount = mprisModel.rowCount();
+    }
+
+    function nextPlayer() {
+        if (playerCount <= 1) return;
+        mprisModel.currentIndex = (mprisModel.currentIndex + 1) % playerCount;
+    }
+
+    function prevPlayer() {
+        if (playerCount <= 1) return;
+        mprisModel.currentIndex = (mprisModel.currentIndex - 1 + playerCount) % playerCount;
+    }
+
+    Connections {
+        target: mprisModel
+        function onRowsInserted() { mediaRoot.updatePlayerCount(); }
+        function onRowsRemoved() { mediaRoot.updatePlayerCount(); }
+        function onModelReset() { mediaRoot.updatePlayerCount(); }
+        function onLayoutChanged() { mediaRoot.updatePlayerCount(); }
+    }
+
+    Component.onCompleted: updatePlayerCount()
+
     readonly property var player: mprisModel.currentPlayer
     readonly property bool hasPlayer: player !== null && player !== undefined
     readonly property string trackTitle: hasPlayer && player.track ? player.track : i18n("No Media Playing")
@@ -31,22 +57,89 @@ Rectangle {
         anchors.margins: 12
         spacing: 10
 
-        // Section Title
+        // Section Title & Multi-Player Switcher
         RowLayout {
             Layout.fillWidth: true
+            spacing: 6
+
             Kirigami.Icon {
                 source: "multimedia-audio-player"
-                implicitWidth: 18
-                implicitHeight: 18
+                implicitWidth: 16
+                implicitHeight: 16
                 color: "#ff2d55"
             }
             Text {
                 text: i18n("Now Playing")
                 font.family: "SF Hello"
-                font.pixelSize: 14
+                font.pixelSize: 13
                 font.bold: true
                 color: "#ffffff"
-                Layout.fillWidth: true
+            }
+
+            Item { Layout.fillWidth: true }
+
+            // Multi-Player Switcher
+            RowLayout {
+                spacing: 4
+                visible: mediaRoot.playerCount > 1
+
+                // Prev Player Button
+                Rectangle {
+                    implicitWidth: 20
+                    implicitHeight: 20
+                    radius: 4
+                    color: prevPlayerM.containsMouse ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.06)
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "‹"
+                        font.pixelSize: 13
+                        font.bold: true
+                        color: "#ffffff"
+                    }
+
+                    MouseArea {
+                        id: prevPlayerM
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: mediaRoot.prevPlayer()
+                    }
+                }
+
+                // Player Identity & Counter (e.g. "Spotify (1/2)")
+                Text {
+                    text: (mediaRoot.player && mediaRoot.player.identity ? mediaRoot.player.identity : i18n("Player")) +
+                          " (" + (mprisModel.currentIndex + 1) + "/" + mediaRoot.playerCount + ")"
+                    font.family: "SF Hello"
+                    font.pixelSize: 10
+                    font.bold: true
+                    color: Qt.rgba(1, 1, 1, 0.7)
+                }
+
+                // Next Player Button
+                Rectangle {
+                    implicitWidth: 20
+                    implicitHeight: 20
+                    radius: 4
+                    color: nextPlayerM.containsMouse ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.06)
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "›"
+                        font.pixelSize: 13
+                        font.bold: true
+                        color: "#ffffff"
+                    }
+
+                    MouseArea {
+                        id: nextPlayerM
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: mediaRoot.nextPlayer()
+                    }
+                }
             }
         }
 
