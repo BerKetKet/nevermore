@@ -12,24 +12,25 @@
 | :--- | :--- | :--- |
 | **Segmented Tab Flyout** | **Implemented** | Three dedicated tabs: Widgets, Notifications, and Run. |
 | **Interactive Calendar** | **Implemented** | Full 7x6 month grid with month navigation and current day highlight. |
+| **Calendar Reminders & Tasks** | *Deferred* | Reminders and task synchronization held off pending future Google Calendar integration. |
 | **Overall CPU Telemetry** | **Implemented** | Aggregate CPU load percentage via `org.kde.ksysguard.sensors`. |
 | **Per-Core CPU Stats** | *Planned* | Per-core CPU load breakdown is scheduled for a future release. |
 | **RAM Telemetry** | **Implemented** | Real-time memory consumption (`Used GB / Total GB`) and percentage. |
 | **Storage Utilization** | **Implemented** | Aggregate storage utilization across mounted filesystems (`disk/all`). |
 | **Network Throughput** | **Implemented** | Real-time aggregate upload and download throughput. |
-| **MPRIS Media Controller** | **Implemented** | Player detection, album artwork, track details, and playback controls. |
+| **MPRIS Media Controller** | **Implemented** | Multi-player switcher (`‹ Player Name (1/N) ›`), album art, track details, and playback controls. |
 | **Audio Volume Controls** | **Implemented** | Master output and microphone volume sliders with toggle mute. |
 | **Notification Center** | **Implemented** | Aggregated notification feed with Do Not Disturb and bulk clearing. |
 | **Notification Actions** | *Partial* | Per-notification dismissal works; action buttons planned for Phase 5. |
 | **Notification Timestamps**| *Planned* | Relative timestamps ("5m ago") scheduled for Phase 5. |
 | **Expandable Notifications**| *Planned* | Collapsible long-body notification cards scheduled for Phase 5. |
-| **Quick Run Tab** | **Implemented** | One-shot command runner with exit codes, directory tracking, and process group control. |
+| **Quick Run Tab** | **Implemented** | Inline blinking-cursor terminal prompt inside buffer (no bottom bar), exit codes, directory tracking, and process group control. |
 | **Process Group Termination** | **Implemented** | Stop button terminates entire process group using `setsid` and `kill -TERM` then `kill -KILL`. |
 | **Background Tasks** | **Implemented** | Launch, list (`--output=json`), inspect logs, stop active units, and dismiss finished/failed units (`nevermore-task-*`). |
 | **Multiline Paste Protection**| **Implemented** | Clipboard paste (`wl-paste`) with modal preview dialog and direct execution. |
 | **Open in Konsole** | **Implemented** | One-click button to open detached Konsole in the active tab's working directory. |
 | **Command History** | *In-Memory* | Maintained strictly in-memory per session (cleared on plasmoid restart). |
-| **Global Shortcut** | **Automated** | Automatically registered during install via `org.kde.kglobalaccel` over D-Bus (`Meta+N`); manual System Settings fallback documented. |
+| **Global Shortcut** | **Automated** | Zero-strut overlay toggle registered via `org.kde.kglobalaccel` D-Bus (`Meta+N`); eliminates window shifting. |
 
 ---
 

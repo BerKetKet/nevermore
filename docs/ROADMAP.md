@@ -58,4 +58,5 @@ This document outlines the structured development phases and architectural roadm
 
 - **Real qmllint with KDE Module Stubs:** In CI runners without KDE Plasma/KF6 packages installed, `qmllint` must run with `--unresolved-type disable --missing-property disable`. Providing offline mock type stubs or dummy `qmldir` modules for `org.kde.*` in CI to enable full semantic verification is slated for a future tooling update.
 - **Embedded PTY Terminal:** Dropped in favor of the lightweight Quick Run runner and external Konsole integration. Full PTY emulation within QML introduces unnecessary complexity, security hazards, and rendering inefficiencies.
+- **Calendar Reminders & Tasks (Google Calendar Sync):** Deferred pending future Google Calendar synchronization integration; interactive month grid remains purely local.
 - **Weather & Forecast Card:** Deferred pending evaluation of lightweight, zero-key public weather APIs.
