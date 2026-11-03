@@ -2,11 +2,16 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import org.kde.plasma.plasmoid
+import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
 import org.kde.notificationmanager as NM
 
 PlasmoidItem {
     id: root
+
+    // Inside vertical/side panels (Panel 412), adapt to full rich representation directly.
+    // In horizontal panels (Panel 378 top bar), use compact icon trigger that opens a zero-strut popup dialog.
+    preferredRepresentation: (Plasmoid.formFactor === PlasmaCore.Types.Vertical || Plasmoid.location === PlasmaCore.Types.RightEdge || Plasmoid.location === PlasmaCore.Types.LeftEdge) ? fullRepresentation : compactRepresentation
 
     compactRepresentation: MouseArea {
         id: compactRoot

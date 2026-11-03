@@ -14,11 +14,13 @@ fi
 
 # Locate Nevermore widget ID across active Plasma panels and activate it.
 # Activating the widget toggles its native Plasma popup Dialog with ZERO struts (no window shifting).
+# Prefer compact/horizontal panel instance (e.g. top panel) so Meta+N always triggers zero-strut popup overlay.
 WIDGET_ID=$("$QDBUS_BIN" org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript '
 let targetId = "";
+// First pass: prefer compact trigger instance on top or horizontal panel
 for (let pid of panelIds) {
     let p = panelById(pid);
-    if (!p) continue;
+    if (!p || p.location === "right") continue;
     for (let wid of p.widgetIds) {
         let w = p.widgetById(wid);
         if (w && w.type === "io.github.berketket.nevermore") {
@@ -27,6 +29,21 @@ for (let pid of panelIds) {
         }
     }
     if (targetId !== "") break;
+}
+// Fallback pass: any panel if no horizontal instance exists
+if (targetId === "") {
+    for (let pid of panelIds) {
+        let p = panelById(pid);
+        if (!p) continue;
+        for (let wid of p.widgetIds) {
+            let w = p.widgetById(wid);
+            if (w && w.type === "io.github.berketket.nevermore") {
+                targetId = wid;
+                break;
+            }
+        }
+        if (targetId !== "") break;
+    }
 }
 print(targetId);
 ' 2>/dev/null || true)

@@ -112,6 +112,51 @@ except Exception:
     print("Notice: Automated global shortcut registration skipped (configure Meta+N in System Settings -> Shortcuts).")
 ' 2>/dev/null || true
     fi
+
+    # Refresh live panels so applets reload cleanly without stuck error states
+    local qdbus_tool=""
+    if command -v qdbus6 >/dev/null 2>&1; then
+        qdbus_tool="qdbus6"
+    elif command -v qdbus >/dev/null 2>&1; then
+        qdbus_tool="qdbus"
+    fi
+
+    if [ -n "$qdbus_tool" ]; then
+        "$qdbus_tool" org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript '
+        // Ensure right autohide panel has a fresh instance of Nevermore
+        for (let pid of panelIds) {
+            let p = panelById(pid);
+            if (!p || p.location !== "right") continue;
+            for (let wid of p.widgetIds) {
+                let w = p.widgetById(wid);
+                if (w && (w.type === "io.github.berketket.nevermore" || w.type === "org.kde.plasma.budgie.raven")) {
+                    w.remove();
+                }
+            }
+            p.addWidget("io.github.berketket.nevermore");
+            p.hiding = "autohide";
+            print("Refreshed Nevermore on right panel " + pid);
+        }
+
+        // Ensure top/horizontal panel has at most one Nevermore compact trigger
+        let topFound = false;
+        for (let pid of panelIds) {
+            let p = panelById(pid);
+            if (!p || p.location === "right") continue;
+            for (let wid of p.widgetIds) {
+                let w = p.widgetById(wid);
+                if (w && w.type === "io.github.berketket.nevermore") {
+                    if (!topFound) {
+                        topFound = true;
+                    } else {
+                        w.remove();
+                    }
+                }
+            }
+        }
+        ' 2>/dev/null || true
+        echo "✓ Synchronized live desktop panel applets"
+    fi
 }
 
 MODE="${1:---install}"
