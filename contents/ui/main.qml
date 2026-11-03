@@ -13,6 +13,24 @@ PlasmoidItem {
     // In horizontal panels (Panel 378 top bar), use compact icon trigger that opens a zero-strut popup dialog.
     preferredRepresentation: (Plasmoid.formFactor === PlasmaCore.Types.Vertical || Plasmoid.location === PlasmaCore.Types.RightEdge || Plasmoid.location === PlasmaCore.Types.LeftEdge) ? fullRepresentation : compactRepresentation
 
+    // Request keyboard interactivity on Wayland when Run tab or popup is active
+    Plasmoid.status: (root.activeTab === 2 || root.expanded) ? PlasmaCore.Types.AcceptingInputStatus : PlasmaCore.Types.PassiveStatus
+
+    // Enable native toggle behavior on shortcut activation
+    activationTogglesExpanded: true
+
+    // Prevent immediate close on deactivation so toggle control center overlay stays open while active
+    hideOnWindowDeactivate: false
+
+    Connections {
+        target: Plasmoid
+        function onActivated() {
+            if (!root.activationTogglesExpanded) {
+                root.expanded = !root.expanded;
+            }
+        }
+    }
+
     compactRepresentation: MouseArea {
         id: compactRoot
         implicitWidth: Kirigami.Units.gridUnit * 2
@@ -271,6 +289,7 @@ PlasmoidItem {
                 QuickRunTab {
                     anchors.fill: parent
                     visible: root.activeTab === 2
+                    isExpanded: root.expanded
                 }
             }
         }

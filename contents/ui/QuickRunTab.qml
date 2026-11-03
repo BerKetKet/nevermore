@@ -80,6 +80,15 @@ Item {
 
     readonly property var activeTab: (terminalTabs && terminalTabs.length > activeTabIndex) ? terminalTabs[activeTabIndex] : null
 
+    property bool isExpanded: false
+    onIsExpandedChanged: {
+        if (isExpanded && visible && !isExecuting) {
+            Qt.callLater(() => {
+                if (inlineInput) inlineInput.forceActiveFocus();
+            });
+        }
+    }
+
     // Background Tasks State & Measured Polling Gating
     property var bgTasks: []
     property bool tasksExpanded: false
@@ -1111,6 +1120,15 @@ Item {
             border.width: 1
             clip: true
 
+            TapHandler {
+                onTapped: {
+                    if (inlineInput) {
+                        inlineInput.forceActiveFocus();
+                    }
+                    outputList.positionViewAtEnd();
+                }
+            }
+
             MouseArea {
                 anchors.fill: parent
                 onClicked: {
@@ -1271,6 +1289,14 @@ Item {
                         font.pixelSize: 11
                         font.bold: true
                         color: "#30d158"
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.IBeamCursor
+                            onClicked: {
+                                if (inlineInput) inlineInput.forceActiveFocus();
+                            }
+                        }
                     }
 
                     TextInput {
@@ -1282,6 +1308,7 @@ Item {
                         selectByMouse: true
                         wrapMode: TextInput.WrapAnywhere
                         focus: true
+                        activeFocusOnTab: true
 
                         cursorDelegate: Rectangle {
                             width: 7
