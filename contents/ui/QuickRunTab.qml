@@ -1121,209 +1121,211 @@ Item {
                 }
             }
 
-            ListView {
-                id: outputList
+            ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 8
-                spacing: 8
-                model: termRoot.activeTab ? termRoot.activeTab.history : []
+                spacing: 6
 
-                ScrollBar.vertical: ScrollBar {
-                    active: true
-                }
+                ListView {
+                    id: outputList
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 8
+                    clip: true
+                    model: termRoot.activeTab ? termRoot.activeTab.history : []
 
-                delegate: ColumnLayout {
-                    width: outputList.width
-                    spacing: 4
-
-                    // Output Text Area
-                    TextEdit {
-                        id: contentTxt
-                        Layout.fillWidth: true
-                        readOnly: true
-                        selectByMouse: true
-                        wrapMode: TextEdit.Wrap
-                        font.family: "SF Mono"
-                        font.pixelSize: 11
-
-                        color: {
-                            if (modelData.type === "input") return "#30d158";
-                            if (modelData.type === "system") return "#8e8e93";
-                            if (modelData.exitCode && modelData.exitCode !== 0) return "#ff453a";
-                            return "#f2f2f7";
-                        }
-
-                        font.bold: modelData.type === "input"
-                        text: modelData.text || ""
+                    ScrollBar.vertical: ScrollBar {
+                        active: true
                     }
 
-                    // Exit Code Badge and Failure Tag
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 6
-                        visible: modelData.type === "output" && modelData.exitCode !== undefined
-
-                        Rectangle {
-                            implicitWidth: exitBadgeText.implicitWidth + 10
-                            height: 18
-                            radius: 4
-                            color: modelData.exitCode === 0 ? Qt.rgba(48/255, 209/255, 88/255, 0.15) : Qt.rgba(1.0, 69/255, 58/255, 0.2)
-                            border.color: modelData.exitCode === 0 ? "#30d158" : "#ff453a"
-                            border.width: 1
-
-                            Text {
-                                id: exitBadgeText
-                                anchors.centerIn: parent
-                                text: (modelData && modelData.exitCode !== undefined) ? (modelData.exitCode === 0 ? i18n("Exit 0") : i18n("Exit %1", String(modelData.exitCode))) : ""
-                                font.family: "SF Mono"
-                                font.pixelSize: 10
-                                font.bold: true
-                                color: modelData.exitCode === 0 ? "#30d158" : "#ff453a"
-                            }
-                        }
-
-                        Item { Layout.fillWidth: true }
-                    }
-
-                    // Timeout Hint Box
-                    Rectangle {
-                        Layout.fillWidth: true
-                        implicitHeight: timeoutCol.implicitHeight + 16
-                        radius: 8
-                        color: Qt.rgba(1.0, 159/255, 10/255, 0.12)
-                        border.color: "#ff9f0a"
-                        border.width: 1
-                        visible: modelData.isTimeout === true
-
-                        ColumnLayout {
-                            id: timeoutCol
-                            anchors.fill: parent
-                            anchors.margins: 8
-                            spacing: 6
-
-                            RowLayout {
-                                spacing: 6
-                                Kirigami.Icon {
-                                    source: "dialog-warning"
-                                    implicitWidth: 16
-                                    implicitHeight: 16
-                                    color: "#ff9f0a"
-                                }
-                                Text {
-                                    text: i18n("Command may need an interactive terminal")
-                                    font.family: "SF Hello"
-                                    font.pixelSize: 12
-                                    font.bold: true
-                                    color: "#ff9f0a"
-                                }
-                            }
-
-                            Text {
-                                text: i18n("The command ran past the %1 second timeout. If it is expecting keyboard input or full TTY control, run it in a full terminal window.", termRoot.timeoutSeconds)
-                                font.family: "SF Hello"
-                                font.pixelSize: 11
-                                color: "#f2f2f7"
-                                wrapMode: Text.Wrap
-                                Layout.fillWidth: true
-                            }
-
-                            Button {
-                                text: i18n("Open in Konsole")
-                                icon.name: "utilities-terminal"
-                                onClicked: termRoot.openInKonsole(modelData.cwd)
-                            }
-                        }
-                    }
-                }
-
-                footer: ColumnLayout {
-                    width: outputList.width
-                    spacing: 4
-
-                    // Running indicator
-                    RowLayout {
-                        Layout.fillWidth: true
-                        visible: termRoot.isExecuting
-                        spacing: 6
-
-                        Text {
-                            text: i18n("⏳ Running...")
-                            font.family: "SF Mono"
-                            font.pixelSize: 11
-                            color: "#ff9f0a"
-                        }
-                    }
-
-                    // Interactive prompt row
-                    RowLayout {
-                        id: promptRow
-                        Layout.fillWidth: true
-                        visible: !termRoot.isExecuting
+                    delegate: ColumnLayout {
+                        width: outputList.width
                         spacing: 4
 
-                        Text {
-                            id: promptLabel
-                            text: (termRoot.activeTab ? termRoot.formatPath(termRoot.activeTab.currentDir) : "~") + " ❯ "
+                        // Output Text Area
+                        TextEdit {
+                            id: contentTxt
+                            Layout.fillWidth: true
+                            readOnly: true
+                            selectByMouse: true
+                            wrapMode: TextEdit.Wrap
                             font.family: "SF Mono"
                             font.pixelSize: 11
-                            font.bold: true
-                            color: "#30d158"
+
+                            color: {
+                                if (modelData.type === "input") return "#30d158";
+                                if (modelData.type === "system") return "#8e8e93";
+                                if (modelData.exitCode && modelData.exitCode !== 0) return "#ff453a";
+                                return "#f2f2f7";
+                            }
+
+                            font.bold: modelData.type === "input"
+                            text: modelData.text || ""
                         }
 
-                        TextInput {
-                            id: inlineInput
+                        // Exit Code Badge and Failure Tag
+                        RowLayout {
                             Layout.fillWidth: true
-                            font.family: "SF Mono"
-                            font.pixelSize: 11
-                            color: "#f2f2f7"
-                            selectByMouse: true
-                            wrapMode: TextInput.WrapAnywhere
-                            focus: true
+                            spacing: 6
+                            visible: modelData.type === "output" && modelData.exitCode !== undefined
 
-                            cursorDelegate: Rectangle {
-                                width: 7
-                                height: 14
-                                color: "#30d158"
-                                visible: inlineInput.activeFocus && blinkTimer.cursorVisible
+                            Rectangle {
+                                implicitWidth: exitBadgeText.implicitWidth + 10
+                                height: 18
+                                radius: 4
+                                color: modelData.exitCode === 0 ? Qt.rgba(48/255, 209/255, 88/255, 0.15) : Qt.rgba(1.0, 69/255, 58/255, 0.2)
+                                border.color: modelData.exitCode === 0 ? "#30d158" : "#ff453a"
+                                border.width: 1
 
-                                Timer {
-                                    id: blinkTimer
-                                    property bool cursorVisible: true
-                                    interval: 530
-                                    repeat: true
-                                    running: inlineInput.activeFocus
-                                    onTriggered: cursorVisible = !cursorVisible
+                                Text {
+                                    id: exitBadgeText
+                                    anchors.centerIn: parent
+                                    text: (modelData && modelData.exitCode !== undefined) ? (modelData.exitCode === 0 ? i18n("Exit 0") : i18n("Exit %1", String(modelData.exitCode))) : ""
+                                    font.family: "SF Mono"
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                    color: modelData.exitCode === 0 ? "#30d158" : "#ff453a"
                                 }
                             }
 
-                            onAccepted: {
-                                termRoot.executeCommand(text, false);
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        // Timeout Hint Box
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: timeoutCol.implicitHeight + 16
+                            radius: 8
+                            color: Qt.rgba(1.0, 159/255, 10/255, 0.12)
+                            border.color: "#ff9f0a"
+                            border.width: 1
+                            visible: modelData.isTimeout === true
+
+                            ColumnLayout {
+                                id: timeoutCol
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 6
+
+                                RowLayout {
+                                    spacing: 6
+                                    Kirigami.Icon {
+                                        source: "dialog-warning"
+                                        implicitWidth: 16
+                                        implicitHeight: 16
+                                        color: "#ff9f0a"
+                                    }
+                                    Text {
+                                        text: i18n("Command may need an interactive terminal")
+                                        font.family: "SF Hello"
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                        color: "#ff9f0a"
+                                    }
+                                }
+
+                                Text {
+                                    text: i18n("The command ran past the %1 second timeout. If it is expecting keyboard input or full TTY control, run it in a full terminal window.", termRoot.timeoutSeconds)
+                                    font.family: "SF Hello"
+                                    font.pixelSize: 11
+                                    color: "#f2f2f7"
+                                    wrapMode: Text.Wrap
+                                    Layout.fillWidth: true
+                                }
+
+                                Button {
+                                    text: i18n("Open in Konsole")
+                                    icon.name: "utilities-terminal"
+                                    onClicked: termRoot.openInKonsole(modelData.cwd)
+                                }
                             }
+                        }
+                    }
+                }
 
-                            Keys.onUpPressed: {
-                                if (!termRoot.activeTab) return;
-                                let hist = termRoot.activeTab.cmdHistory;
-                                if (hist.length === 0) return;
-                                let idx = termRoot.activeTab.cmdHistoryIdx;
-                                if (idx === -1) idx = hist.length - 1;
-                                else if (idx > 0) idx--;
+                // Running indicator
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: termRoot.isExecuting
+                    spacing: 6
 
+                    Text {
+                        text: i18n("⏳ Running...")
+                        font.family: "SF Mono"
+                        font.pixelSize: 11
+                        color: "#ff9f0a"
+                    }
+                }
+
+                // Interactive prompt row
+                RowLayout {
+                    id: promptRow
+                    Layout.fillWidth: true
+                    visible: !termRoot.isExecuting
+                    spacing: 4
+
+                    Text {
+                        id: promptLabel
+                        text: (termRoot.activeTab ? termRoot.formatPath(termRoot.activeTab.currentDir) : "~") + " ❯ "
+                        font.family: "SF Mono"
+                        font.pixelSize: 11
+                        font.bold: true
+                        color: "#30d158"
+                    }
+
+                    TextInput {
+                        id: inlineInput
+                        Layout.fillWidth: true
+                        font.family: "SF Mono"
+                        font.pixelSize: 11
+                        color: "#f2f2f7"
+                        selectByMouse: true
+                        wrapMode: TextInput.WrapAnywhere
+                        focus: true
+
+                        cursorDelegate: Rectangle {
+                            width: 7
+                            height: 14
+                            color: "#30d158"
+                            visible: inlineInput.activeFocus && blinkTimer.cursorVisible
+
+                            Timer {
+                                id: blinkTimer
+                                property bool cursorVisible: true
+                                interval: 530
+                                repeat: true
+                                running: inlineInput.activeFocus
+                                onTriggered: cursorVisible = !cursorVisible
+                            }
+                        }
+
+                        onAccepted: {
+                            termRoot.executeCommand(text, false);
+                        }
+
+                        Keys.onUpPressed: {
+                            if (!termRoot.activeTab) return;
+                            let hist = termRoot.activeTab.cmdHistory;
+                            if (hist.length === 0) return;
+                            let idx = termRoot.activeTab.cmdHistoryIdx;
+                            if (idx === -1) idx = hist.length - 1;
+                            else if (idx > 0) idx--;
+
+                            termRoot.activeTab.cmdHistoryIdx = idx;
+                            text = hist[idx];
+                        }
+
+                        Keys.onDownPressed: {
+                            if (!termRoot.activeTab) return;
+                            let hist = termRoot.activeTab.cmdHistory;
+                            let idx = termRoot.activeTab.cmdHistoryIdx;
+                            if (idx !== -1 && idx < hist.length - 1) {
+                                idx++;
                                 termRoot.activeTab.cmdHistoryIdx = idx;
                                 text = hist[idx];
-                            }
-
-                            Keys.onDownPressed: {
-                                if (!termRoot.activeTab) return;
-                                let hist = termRoot.activeTab.cmdHistory;
-                                let idx = termRoot.activeTab.cmdHistoryIdx;
-                                if (idx !== -1 && idx < hist.length - 1) {
-                                    idx++;
-                                    termRoot.activeTab.cmdHistoryIdx = idx;
-                                    text = hist[idx];
-                                } else {
-                                    termRoot.activeTab.cmdHistoryIdx = -1;
-                                    text = "";
-                                }
+                            } else {
+                                termRoot.activeTab.cmdHistoryIdx = -1;
+                                text = "";
                             }
                         }
                     }
