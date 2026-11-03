@@ -24,7 +24,7 @@ JS_FILE="$(mktemp "$RUN_DIR/raise-XXXXXX.js")"
 PLUGIN_NAME="nevermore_raise_${$}_${RANDOM}"
 TOKEN="NEVERMORE_MATCH_${$}_${RANDOM}"
 
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 cleanup() {
     local rc=$?
     if [ -n "${PLUGIN_NAME:-}" ]; then
