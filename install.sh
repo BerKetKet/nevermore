@@ -12,6 +12,10 @@ purge_legacy() {
     local legacy_bin="$BIN_DIR/toggle-raven.sh"
     local legacy_desktop="$APP_DIR/toggle-raven.desktop"
 
+    # Remove stale backup directories and QML bytecode cache
+    rm -rf "$HOME/.local/share/plasma/plasmoids/org.kde.plasma.budgie.raven.bak"* 2>/dev/null || true
+    rm -rf "$HOME/.cache/plasmashell/qmlcache"/* 2>/dev/null || true
+
     if [ -L "$legacy_dir" ] || [ -d "$legacy_dir" ]; then
         rm -rf "$legacy_dir"
         echo "✓ Removed legacy plasmoid directory: $legacy_dir"
@@ -138,24 +142,50 @@ except Exception:
             print("Refreshed Nevermore on right panel " + pid);
         }
 
-        // Ensure top/horizontal panel has at most one Nevermore compact trigger
+        // Ensure top/horizontal panel has at most one Nevermore compact trigger with Meta+N shortcut
+        let topPanel = null;
         let topFound = false;
         for (let pid of panelIds) {
             let p = panelById(pid);
             if (!p || p.location === "right") continue;
+            if (!topPanel && p.location === "top") topPanel = p;
             for (let wid of p.widgetIds) {
                 let w = p.widgetById(wid);
-                if (w && w.type === "io.github.berketket.nevermore") {
+                if (w && (w.type === "io.github.berketket.nevermore" || w.type === "org.kde.plasma.budgie.raven")) {
                     if (!topFound) {
                         topFound = true;
+                        if (w.type === "org.kde.plasma.budgie.raven") {
+                            w.remove();
+                            let nw = p.addWidget("io.github.berketket.nevermore");
+                            if (nw) nw.globalShortcut = "Meta+N";
+                        } else {
+                            w.globalShortcut = "Meta+N";
+                        }
                     } else {
                         w.remove();
                     }
                 }
             }
         }
+        if (!topFound) {
+            let targetPanel = topPanel || (panelIds.length > 0 ? panelById(panelIds[0]) : null);
+            if (targetPanel && targetPanel.location !== "right") {
+                let nw = targetPanel.addWidget("io.github.berketket.nevermore");
+                if (nw) nw.globalShortcut = "Meta+N";
+                print("Added Nevermore trigger with Meta+N shortcut to panel " + targetPanel.id);
+            }
+        }
         ' 2>/dev/null || true
         echo "✓ Synchronized live desktop panel applets"
+    fi
+
+    # Clear QML cache and restart plasma-plasmashell to force reload of fresh bytecode
+    rm -rf "$HOME/.cache/plasmashell/qmlcache"/* 2>/dev/null || true
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl --user stop "app-plasmashell@*.service" 2>/dev/null || true
+        systemctl --user restart plasma-plasmashell.service 2>/dev/null || true
+        sleep 3
+        echo "✓ Restarted plasma-plasmashell.service"
     fi
 }
 
