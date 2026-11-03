@@ -111,6 +111,22 @@ Item {
         if (visible && tasksExpanded) {
             termRoot.pollTasks();
         }
+        if (visible && !isExecuting) {
+            Qt.callLater(() => {
+                if (inlineInput) inlineInput.forceActiveFocus();
+            });
+        }
+    }
+
+    onIsExecutingChanged: {
+        if (!isExecuting) {
+            Qt.callLater(() => {
+                if (inlineInput) {
+                    inlineInput.forceActiveFocus();
+                }
+                outputList.positionViewAtEnd();
+            });
+        }
     }
 
     // Execution Engine via Plasma5Support
@@ -236,7 +252,8 @@ Item {
                     confirmDialog.pendingText = clip;
                     confirmDialog.visible = true;
                 } else {
-                    cmdInput.text = clip;
+                    inlineInput.text = clip;
+                    inlineInput.forceActiveFocus();
                 }
             }
         }
@@ -315,13 +332,16 @@ Item {
             }
 
             let tasks = termRoot.bgTasks.slice();
+            let updatedTasks = [];
             for (let j = 0; j < tasks.length; j++) {
                 let u = tasks[j].unit;
                 if (statusMap[u] !== undefined) {
-                    tasks[j].execStatus = statusMap[u];
+                    updatedTasks.push(Object.assign({}, tasks[j], { execStatus: statusMap[u] }));
+                } else {
+                    updatedTasks.push(Object.assign({}, tasks[j]));
                 }
             }
-            termRoot.bgTasks = tasks;
+            termRoot.bgTasks = updatedTasks;
         }
     }
 
@@ -387,7 +407,7 @@ Item {
         terminalTabs = tabsCopy;
 
         runningTabId = activeTab ? activeTab.id : -1;
-        cmdInput.text = "";
+        if (inlineInput) inlineInput.text = "";
         isExecuting = true;
         outputList.positionViewAtEnd();
 
@@ -398,6 +418,7 @@ Item {
 
         let fullCommand = "";
         if (asBackground) {
+            termRoot.tasksExpanded = true;
             fullCommand = "\"" + runnerPath + "\" --bg " + currentSentinel + " " + b64Cwd + " " + b64Cmd;
             taskRefreshTimer.restart();
         } else {
@@ -688,7 +709,7 @@ Item {
                 height: 30
                 radius: 8
                 color: termRoot.isExecuting
-                       ? (stopM.containsMouse ? Qt.rgba(1.0, 69/255, 58/255, 0.4) : Qt.rgba(1.0, 69/255, 58/255, 0.2))
+                       ? (runM.containsMouse ? Qt.rgba(1.0, 69/255, 58/255, 0.4) : Qt.rgba(1.0, 69/255, 58/255, 0.2))
                        : (runM.containsMouse ? Qt.rgba(48/255, 209/255, 88/255, 0.3) : Qt.rgba(48/255, 209/255, 88/255, 0.15))
                 border.color: termRoot.isExecuting ? "#ff453a" : "#30d158"
                 border.width: 1
@@ -721,18 +742,9 @@ Item {
                         if (termRoot.isExecuting) {
                             termRoot.stopCommand();
                         } else {
-                            termRoot.executeCommand(cmdInput.text, false);
+                            termRoot.executeCommand(inlineInput ? inlineInput.text : "", false);
                         }
                     }
-                }
-
-                MouseArea {
-                    id: stopM
-                    anchors.fill: parent
-                    enabled: termRoot.isExecuting
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: termRoot.stopCommand()
                 }
             }
 
@@ -769,7 +781,7 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: termRoot.executeCommand(cmdInput.text, true)
+                    onClicked: termRoot.executeCommand(inlineInput ? inlineInput.text : "", true)
                 }
             }
 
@@ -1090,6 +1102,7 @@ Item {
 
         // --- Output Buffer Area ---
         Rectangle {
+            id: terminalContainer
             Layout.fillWidth: true
             Layout.fillHeight: true
             radius: 10
@@ -1097,6 +1110,16 @@ Item {
             border.color: Qt.rgba(1, 1, 1, 0.08)
             border.width: 1
             clip: true
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (inlineInput) {
+                        inlineInput.forceActiveFocus();
+                    }
+                    outputList.positionViewAtEnd();
+                }
+            }
 
             ListView {
                 id: outputList
@@ -1212,93 +1235,97 @@ Item {
                         }
                     }
                 }
-            }
-        }
 
-        // --- Command Input Bar at Bottom ---
-        Rectangle {
-            Layout.fillWidth: true
-            height: 36
-            radius: 8
-            color: Qt.rgba(1, 1, 1, 0.06)
-            border.color: cmdInput.activeFocus ? "#0a84ff" : Qt.rgba(1, 1, 1, 0.1)
-            border.width: 1
+                footer: ColumnLayout {
+                    width: outputList.width
+                    spacing: 4
 
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 8
-                anchors.rightMargin: 4
-                spacing: 6
+                    // Running indicator
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: termRoot.isExecuting
+                        spacing: 6
 
-                Text {
-                    text: "❯"
-                    font.family: "SF Mono"
-                    font.pixelSize: 13
-                    font.bold: true
-                    color: "#0a84ff"
-                }
-
-                TextField {
-                    id: cmdInput
-                    Layout.fillWidth: true
-                    placeholderText: i18n("Command... (Enter to run)")
-                    font.family: "SF Mono"
-                    font.pixelSize: 11
-                    color: "#ffffff"
-                    background: null
-                    focus: true
-
-                    onAccepted: {
-                        termRoot.executeCommand(text, false);
-                    }
-
-                    Keys.onUpPressed: {
-                        if (!termRoot.activeTab) return;
-                        let hist = termRoot.activeTab.cmdHistory;
-                        if (hist.length === 0) return;
-                        let idx = termRoot.activeTab.cmdHistoryIdx;
-                        if (idx === -1) idx = hist.length - 1;
-                        else if (idx > 0) idx--;
-
-                        termRoot.activeTab.cmdHistoryIdx = idx;
-                        text = hist[idx];
-                    }
-
-                    Keys.onDownPressed: {
-                        if (!termRoot.activeTab) return;
-                        let hist = termRoot.activeTab.cmdHistory;
-                        let idx = termRoot.activeTab.cmdHistoryIdx;
-                        if (idx !== -1 && idx < hist.length - 1) {
-                            idx++;
-                            termRoot.activeTab.cmdHistoryIdx = idx;
-                            text = hist[idx];
-                        } else {
-                            termRoot.activeTab.cmdHistoryIdx = -1;
-                            text = "";
+                        Text {
+                            text: i18n("⏳ Running...")
+                            font.family: "SF Mono"
+                            font.pixelSize: 11
+                            color: "#ff9f0a"
                         }
                     }
-                }
 
-                // Send Icon Button
-                Rectangle {
-                    implicitWidth: 28
-                    implicitHeight: 28
-                    radius: 6
-                    color: sendM.containsMouse ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.05)
+                    // Interactive prompt row
+                    RowLayout {
+                        id: promptRow
+                        Layout.fillWidth: true
+                        visible: !termRoot.isExecuting
+                        spacing: 4
 
-                    Text {
-                        anchors.centerIn: parent
-                        text: "⏎"
-                        font.pixelSize: 13
-                        color: "#ffffff"
-                    }
+                        Text {
+                            id: promptLabel
+                            text: (termRoot.activeTab ? termRoot.formatPath(termRoot.activeTab.currentDir) : "~") + " ❯ "
+                            font.family: "SF Mono"
+                            font.pixelSize: 11
+                            font.bold: true
+                            color: "#30d158"
+                        }
 
-                    MouseArea {
-                        id: sendM
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: termRoot.executeCommand(cmdInput.text, false)
+                        TextInput {
+                            id: inlineInput
+                            Layout.fillWidth: true
+                            font.family: "SF Mono"
+                            font.pixelSize: 11
+                            color: "#f2f2f7"
+                            selectByMouse: true
+                            wrapMode: TextInput.WrapAnywhere
+                            focus: true
+
+                            cursorDelegate: Rectangle {
+                                width: 7
+                                height: 14
+                                color: "#30d158"
+                                visible: inlineInput.activeFocus && blinkTimer.cursorVisible
+
+                                Timer {
+                                    id: blinkTimer
+                                    property bool cursorVisible: true
+                                    interval: 530
+                                    repeat: true
+                                    running: inlineInput.activeFocus
+                                    onTriggered: cursorVisible = !cursorVisible
+                                }
+                            }
+
+                            onAccepted: {
+                                termRoot.executeCommand(text, false);
+                            }
+
+                            Keys.onUpPressed: {
+                                if (!termRoot.activeTab) return;
+                                let hist = termRoot.activeTab.cmdHistory;
+                                if (hist.length === 0) return;
+                                let idx = termRoot.activeTab.cmdHistoryIdx;
+                                if (idx === -1) idx = hist.length - 1;
+                                else if (idx > 0) idx--;
+
+                                termRoot.activeTab.cmdHistoryIdx = idx;
+                                text = hist[idx];
+                            }
+
+                            Keys.onDownPressed: {
+                                if (!termRoot.activeTab) return;
+                                let hist = termRoot.activeTab.cmdHistory;
+                                let idx = termRoot.activeTab.cmdHistoryIdx;
+                                if (idx !== -1 && idx < hist.length - 1) {
+                                    idx++;
+                                    termRoot.activeTab.cmdHistoryIdx = idx;
+                                    text = hist[idx];
+                                } else {
+                                    termRoot.activeTab.cmdHistoryIdx = -1;
+                                    text = "";
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1333,7 +1360,7 @@ Item {
         Keys.onEscapePressed: {
             confirmDialog.visible = false;
             confirmDialog.pendingText = "";
-            cmdInput.forceActiveFocus();
+            if (inlineInput) inlineInput.forceActiveFocus();
         }
 
         onVisibleChanged: {
@@ -1425,7 +1452,7 @@ Item {
                         onClicked: {
                             confirmDialog.visible = false;
                             confirmDialog.pendingText = "";
-                            cmdInput.forceActiveFocus();
+                            if (inlineInput) inlineInput.forceActiveFocus();
                         }
                     }
 
