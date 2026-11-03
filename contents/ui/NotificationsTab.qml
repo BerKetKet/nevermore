@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.notificationmanager as NM
+import org.kde.plasma.plasma5support as Plasma5Support
 
 Item {
     id: notifRoot
@@ -14,6 +15,26 @@ Item {
     property var notifModel: null
     readonly property int notifCount: notifModel ? notifModel.count : 0
     readonly property bool isDnd: NM.Server.inhibited
+
+    // Optional fallback: KWin script executor to raise application windows by desktopEntry
+    Plasma5Support.DataSource {
+        id: kwinActivator
+        engine: "executable"
+        connectedSources: []
+        onNewData: (source, data) => {
+            disconnectSource(source);
+        }
+    }
+
+    function raiseApp(desktopEntry, appName) {
+        let target = (desktopEntry || appName || "").trim();
+        if (!target) return;
+        target = target.replace(/[^a-zA-Z0-9_\-\.]/g, "");
+        if (!target) return;
+        let pyScript = "import subprocess; js = '''let wins = workspace.windowList(); for (let w of wins) { let d = w.desktopFileName || ''; let r = w.resourceClass || ''; if (d.indexOf(\\\"" + target + "\\\") !== -1 || r.indexOf(\\\"" + target + "\\\") !== -1) { workspace.activeWindow = w; break; } }'''; f = open('/tmp/kwin_act.js', 'w'); f.write(js); f.close(); sid = subprocess.check_output(['qdbus6', 'org.kde.KWin', '/Scripting', 'org.kde.kwin.Scripting.loadScript', '/tmp/kwin_act.js']).decode().strip(); subprocess.run(['qdbus6', 'org.kde.KWin', f'/Scripting/Script{sid}', 'org.kde.kwin.Script.run']); subprocess.run(['qdbus6', 'org.kde.KWin', f'/Scripting/Script{sid}', 'org.kde.kwin.Script.stop']);";
+        kwinActivator.connectSource("python3 -c \"" + pyScript + "\"");
+        notifRoot.actionInvoked();
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -167,21 +188,25 @@ Item {
                     implicitHeight: notifCol.implicitHeight + 20
                     radius: 12
                     readonly property bool hasAction: model.hasDefaultAction === true
-                    color: (hasAction && cardMouse.containsMouse) ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.05)
-                    border.color: (hasAction && cardMouse.containsMouse) ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.08)
+                    readonly property bool canRaiseApp: !hasAction && ((model.desktopEntry && model.desktopEntry !== "") || (model.applicationName && model.applicationName !== ""))
+                    readonly property bool isInteractive: hasAction || canRaiseApp
+                    color: (isInteractive && cardMouse.containsMouse) ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.05)
+                    border.color: (isInteractive && cardMouse.containsMouse) ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.08)
                     border.width: 1
 
                     MouseArea {
                         id: cardMouse
                         anchors.fill: parent
-                        hoverEnabled: notifItem.hasAction
-                        cursorShape: notifItem.hasAction ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        hoverEnabled: notifItem.isInteractive
+                        cursorShape: notifItem.isInteractive ? Qt.PointingHandCursor : Qt.ArrowCursor
                         z: 0
 
                         onClicked: {
                             if (notifItem.hasAction && notifRoot.notifModel) {
                                 notifRoot.notifModel.invokeDefaultAction(notifRoot.notifModel.index(index, 0), NM.Notifications.Close);
                                 notifRoot.actionInvoked();
+                            } else if (notifItem.canRaiseApp) {
+                                notifRoot.raiseApp(model.desktopEntry, model.applicationName);
                             }
                         }
                     }
