@@ -241,7 +241,7 @@ PlasmoidItem {
                         }
                     }
 
-                    // Tab 3: Run
+                    // Tab 3: Terminal
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
@@ -253,14 +253,14 @@ PlasmoidItem {
                             spacing: 6
 
                             Kirigami.Icon {
-                                source: "system-run"
+                                source: "utilities-terminal"
                                 implicitWidth: 15
                                 implicitHeight: 15
                                 color: root.activeTab === 2 ? "#0a84ff" : Qt.rgba(1, 1, 1, 0.6)
                             }
 
                             Text {
-                                text: i18n("Run")
+                                text: i18n("Terminal")
                                 font.family: "SF Hello"
                                 font.pixelSize: 12
                                 font.bold: root.activeTab === 2
@@ -298,11 +298,10 @@ PlasmoidItem {
                     onActionInvoked: root.expanded = false
                 }
 
-                // Run View
-                QuickRunTab {
+                // Terminal View
+                TerminalTab {
                     anchors.fill: parent
                     visible: root.activeTab === 2
-                    isExpanded: root.expanded
                 }
             }
         }

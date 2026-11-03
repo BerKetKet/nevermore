@@ -24,7 +24,7 @@ jobs:
 
       - name: Run shellcheck
         run: |
-          shellcheck install.sh scripts/nevermore-run scripts/nevermore-raise
+          shellcheck install.sh scripts/nevermore-run scripts/nevermore-raise scripts/nevermore-term
 
       - name: Run qmllint
         run: |
