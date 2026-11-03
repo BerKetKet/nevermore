@@ -1,25 +1,34 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtCore
 import org.kde.plasma.plasmoid
 import org.kde.kirigami as Kirigami
+import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasma5support as Plasma5Support
-
-// Candidate 1: Native Qt6 QMLTermWidget
-import QMLTermWidget 2.0
 
 PlasmoidItem {
     id: spikeRoot
 
+    Plasmoid.status: PlasmaCore.Types.AcceptingInputStatus
     preferredRepresentation: fullRepresentation
     width: 600
     height: 700
+    focus: true
 
     property string tmuxSocket: "nevermore"
     property string tmuxSession: "term"
-    property string tmuxConfPath: ""
+    property string confPath: Qt.resolvedUrl("../../nevermore-tmux.conf").toString().replace(/^file:\/\//, "")
+    property string userHome: StandardPaths.writableLocation(StandardPaths.HomeLocation).toString().replace(/^file:\/\//, "")
     property int selectedCandidate: 0 // 0: QMLTermWidget (Qt6), 1: Pure QML (capture-pane)
     property string candidate2Output: ""
+    property var termWidgetLoader: null
+
+    onVisibleChanged: {
+        if (visible && termWidgetLoader && termWidgetLoader.item && typeof termWidgetLoader.item.forceTerminalFocus === "function") {
+            termWidgetLoader.item.forceTerminalFocus();
+        }
+    }
 
     Plasma5Support.DataSource {
         id: execEngine
@@ -44,7 +53,7 @@ PlasmoidItem {
     }
 
     function openInKonsole() {
-        execEngine.connectSource("konsole -e tmux -L " + spikeRoot.tmuxSocket + " attach -t " + spikeRoot.tmuxSession);
+        execEngine.connectSource("konsole -e tmux -L " + spikeRoot.tmuxSocket + " -f \"" + spikeRoot.confPath + "\" new-session -A -s " + spikeRoot.tmuxSession);
     }
 
     function sendKeyToTmux(key) {
@@ -57,6 +66,7 @@ PlasmoidItem {
         radius: 12
         border.color: Qt.rgba(1, 1, 1, 0.1)
         border.width: 1
+        focus: true
 
         ColumnLayout {
             anchors.fill: parent
@@ -108,9 +118,14 @@ PlasmoidItem {
 
                 Button {
                     Layout.fillWidth: true
-                    text: i18n("Candidate 1: QMLTermWidget (Native Qt6)")
+                    text: i18n("Candidate 1: QMLTermWidget")
                     highlighted: spikeRoot.selectedCandidate === 0
-                    onClicked: spikeRoot.selectedCandidate = 0
+                    onClicked: {
+                        spikeRoot.selectedCandidate = 0;
+                        if (termLoader.item && typeof termLoader.item.forceTerminalFocus === "function") {
+                            termLoader.item.forceTerminalFocus();
+                        }
+                    }
                 }
 
                 Button {
@@ -127,33 +142,81 @@ PlasmoidItem {
                 Layout.fillHeight: true
                 currentIndex: spikeRoot.selectedCandidate
 
-                // Candidate 1: QMLTermWidget
+                // Candidate 1 Viewport with Loader
                 Rectangle {
                     color: "#0c0c0e"
                     radius: 8
                     clip: true
 
-                    QMLTermWidget {
-                        id: qmlTerm
+                    Loader {
+                        id: termLoader
                         anchors.fill: parent
-                        anchors.margins: 4
-                        font.family: "Monospace"
-                        font.pointSize: 10
+                        focus: true
+                        Component.onCompleted: {
+                            spikeRoot.termWidgetLoader = termLoader;
+                            termLoader.setSource("TermWidgetView.qml", {
+                                "confPath": spikeRoot.confPath,
+                                "userHome": spikeRoot.userHome,
+                                "tmuxSocket": spikeRoot.tmuxSocket,
+                                "tmuxSession": spikeRoot.tmuxSession
+                            });
+                        }
+                    }
 
-                        session: QMLTermSession {
-                            id: termSession
-                            shellProgram: "/usr/bin/tmux"
-                            shellProgramArgs: ["-L", spikeRoot.tmuxSocket, "attach", "-t", spikeRoot.tmuxSession]
-                            initialWorkingDirectory: "$HOME"
+                    // Fallback UI when QMLTermWidget module is not installed
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: 12
+                        visible: termLoader.status === Loader.Error
+                        width: parent.width - 40
 
-                            Component.onCompleted: {
-                                termSession.startShellProgram();
+                        Kirigami.Icon {
+                            Layout.alignment: Qt.AlignHCenter
+                            source: "dialog-warning"
+                            implicitWidth: 32
+                            implicitHeight: 32
+                            color: "#ff9f0a"
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: i18n("qmltermwidget Qt6 Module Not Found")
+                            font.family: "SF Hello"
+                            font.pixelSize: 14
+                            font.bold: true
+                            color: "#ffffff"
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: i18n("The QMLTermWidget native module is not installed on this system. Install package 'qmltermwidget' from your distribution repositories (e.g. pacman -S qmltermwidget), or launch your session in external Konsole below.")
+                            font.family: "SF Hello"
+                            font.pixelSize: 11
+                            color: Qt.rgba(1, 1, 1, 0.6)
+                            wrapMode: Text.Wrap
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+
+                        Button {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: i18n("Open in Konsole")
+                            icon.name: "konsole"
+                            onClicked: spikeRoot.openInKonsole()
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        z: -1
+                        onClicked: {
+                            if (termLoader.item && typeof termLoader.item.forceTerminalFocus === "function") {
+                                termLoader.item.forceTerminalFocus();
                             }
                         }
                     }
                 }
 
-                // Candidate 2: Pure QML tmux capture-pane
+                // Candidate 2 Viewport (Pure QML capture-pane)
                 Rectangle {
                     color: "#0c0c0e"
                     radius: 8
@@ -188,7 +251,7 @@ PlasmoidItem {
                             TextField {
                                 id: candidate2Input
                                 Layout.fillWidth: true
-                                placeholderText: i18n("Type command and press Enter (mapped via tmux send-keys)...")
+                                placeholderText: i18n("Type command and press Enter (tmux send-keys)...")
                                 font.family: "Monospace"
                                 font.pixelSize: 12
                                 onAccepted: {
@@ -213,8 +276,8 @@ PlasmoidItem {
             Text {
                 Layout.fillWidth: true
                 text: spikeRoot.selectedCandidate === 0
-                    ? i18n("Candidate 1 provides complete terminal emulation via Konsole's Qt6 engine. Tab, Ctrl+R, vi, sudo prompts, colors, and resize work out of the box.")
-                    : i18n("Candidate 2 polls capture-pane every 150ms and routes inputs through send-keys. Causes high CPU, input latency, and lacks full TUI/cursor escape support.")
+                    ? i18n("Candidate 1 embeds Konsole's Qt6 terminal engine directly in QML, attached to tmux on socket 'nevermore'.")
+                    : i18n("Candidate 2 polls capture-pane and routes inputs via send-keys.")
                 font.family: "SF Hello"
                 font.pixelSize: 11
                 color: Qt.rgba(1, 1, 1, 0.45)
