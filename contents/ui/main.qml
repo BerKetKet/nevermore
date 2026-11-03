@@ -8,22 +8,89 @@ import org.kde.notificationmanager as NM
 PlasmoidItem {
     id: root
 
-    // Force full rich representation
-    preferredRepresentation: fullRepresentation
+    // Single-surface architecture: Always render compact trigger in the panel,
+    // and display the complete control center strictly within the zero-strut popup dialog.
+    preferredRepresentation: compactRepresentation
+
+    // Enable native toggle behavior on shortcut activation
+    activationTogglesExpanded: true
+
+    // Prevent immediate close on deactivation so toggle control center overlay stays open while active
+    hideOnWindowDeactivate: false
+
+    compactRepresentation: MouseArea {
+        id: compactRoot
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        implicitWidth: Kirigami.Units.gridUnit * 2
+        implicitHeight: Kirigami.Units.gridUnit * 2
+        hoverEnabled: true
+
+        Timer {
+            id: hoverExpandTimer
+            interval: 150
+            repeat: false
+            onTriggered: {
+                if (compactRoot.containsMouse && !root.expanded) {
+                    root.expanded = true;
+                }
+            }
+        }
+
+        onEntered: hoverExpandTimer.restart()
+        onExited: hoverExpandTimer.stop()
+        onClicked: {
+            hoverExpandTimer.stop();
+            root.expanded = !root.expanded;
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            radius: 4
+            color: compactRoot.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : "transparent"
+
+            Kirigami.Icon {
+                anchors.centerIn: parent
+                implicitWidth: Kirigami.Units.iconSizes.smallMedium
+                implicitHeight: Kirigami.Units.iconSizes.smallMedium
+                source: "sidebar-expand-right"
+            }
+        }
+    }
 
     NM.Notifications {
-        id: notifCounter
+        id: sharedNotifModel
         showExpired: true
         showDismissed: false
     }
 
-    property int activeTab: 0 // 0: Widgets, 1: Notifications, 2: Terminal
+    property int activeTab: 0 // 0: Widgets, 1: Notifications, 2: Run
+    property string currentDateString: Qt.formatDate(new Date(), "dddd, MMMM d")
+
+    function updateCurrentDate() {
+        currentDateString = Qt.formatDate(new Date(), "dddd, MMMM d");
+    }
+
+    onVisibleChanged: {
+        if (visible) updateCurrentDate();
+    }
+
+    Timer {
+        id: dateRolloverTimer
+        interval: 60000
+        repeat: true
+        running: true
+        onTriggered: root.updateCurrentDate()
+    }
 
     fullRepresentation: Rectangle {
-        id: ravenPanel
+        id: controlCenterPanel
         Layout.minimumWidth: 360
         Layout.preferredWidth: 380
         Layout.maximumWidth: 420
+        Layout.minimumHeight: 600
+        Layout.preferredHeight: Screen.desktopAvailableHeight > 100 ? Math.max(750, Screen.desktopAvailableHeight - 24) : 980
+        Layout.maximumHeight: Screen.desktopAvailableHeight > 100 ? Screen.desktopAvailableHeight : 1050
         Layout.fillHeight: true
 
         color: "#18181b"
@@ -59,7 +126,7 @@ PlasmoidItem {
                         color: "#ffffff"
                     }
                     Text {
-                        text: Qt.formatDate(new Date(), "dddd, MMMM d")
+                        text: root.currentDateString
                         font.family: "SF Hello"
                         font.pixelSize: 11
                         color: Qt.rgba(1, 1, 1, 0.5)
@@ -72,7 +139,7 @@ PlasmoidItem {
             // --- Dual Segmented Tabs (Widgets vs Notifications) ---
             Rectangle {
                 Layout.fillWidth: true
-                height: 38
+                implicitHeight: 38
                 radius: 10
                 color: Qt.rgba(1, 1, 1, 0.06)
                 border.color: Qt.rgba(1, 1, 1, 0.08)
@@ -151,12 +218,12 @@ PlasmoidItem {
                                 implicitHeight: 16
                                 radius: 8
                                 color: "#ff453a"
-                                visible: notifCounter.count > 0
+                                visible: sharedNotifModel.count > 0
 
                                 Text {
                                     id: badgeText
                                     anchors.centerIn: parent
-                                    text: notifCounter.count
+                                    text: sharedNotifModel.count
                                     font.family: "SF Hello"
                                     font.pixelSize: 10
                                     font.bold: true
@@ -226,7 +293,9 @@ PlasmoidItem {
                 // Notifications View
                 NotificationsTab {
                     anchors.fill: parent
+                    notifModel: sharedNotifModel
                     visible: root.activeTab === 1
+                    onActionInvoked: root.expanded = false
                 }
 
                 // Terminal View

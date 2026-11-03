@@ -3,19 +3,74 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.notificationmanager as NM
+import org.kde.plasma.plasma5support as Plasma5Support
 
 Item {
     id: notifRoot
     Layout.fillWidth: true
     Layout.fillHeight: true
 
-    NM.Notifications {
-        id: notifModel
-        showExpired: true
-        showDismissed: false
+    signal actionInvoked()
+
+    property var notifModel: null
+    readonly property int notifCount: notifModel ? notifModel.count : 0
+    readonly property bool isDnd: NM.Server.inhibited
+
+    property var activeCardHints: ({})
+
+    // KWin script executor to raise application windows by desktopEntry via scripts/nevermore-raise
+    Plasma5Support.DataSource {
+        id: kwinActivator
+        engine: "executable"
+        connectedSources: []
+        onNewData: (source, data) => {
+            disconnectSource(source);
+            let exitCode = data["exit code"] ?? -1;
+            if (exitCode === 0) {
+                // Window was found and raised -> collapse Nevermore popup
+                notifRoot.actionInvoked();
+            } else {
+                // No window found (exit 3 or other) -> leave popup open and show brief visual hint
+                let notifId = source.split("__notif_id_")[1];
+                if (notifId !== undefined) {
+                    let hints = Object.assign({}, notifRoot.activeCardHints);
+                    hints[notifId] = i18n("No open window found");
+                    notifRoot.activeCardHints = hints;
+                    hintClearTimer.restart();
+                }
+            }
+        }
     }
 
-    readonly property bool isDnd: NM.Server.inhibited
+    Timer {
+        id: hintClearTimer
+        interval: 2500
+        repeat: false
+        onTriggered: notifRoot.activeCardHints = ({})
+    }
+
+    function raiseApp(desktopEntry, appName, notificationId) {
+        let entry = (desktopEntry || "").trim();
+        if (!entry && appName) {
+            let candidate = appName.trim().toLowerCase().replace(/\s+/g, "-");
+            if (/^[A-Za-z0-9_.-]+$/.test(candidate)) {
+                entry = candidate;
+            }
+        }
+        if (!entry || !/^[A-Za-z0-9_.-]+$/.test(entry)) {
+            let hints = Object.assign({}, notifRoot.activeCardHints);
+            hints[notificationId] = i18n("No window association");
+            notifRoot.activeCardHints = hints;
+            hintClearTimer.restart();
+            return;
+        }
+
+        let safeApp = (appName || "").replace(/["\\`$]/g, "");
+        let helperPath = "~/.local/bin/nevermore-raise";
+        let cmd = helperPath + " \"" + entry + "\" \"" + safeApp + "\"";
+        let taggedSource = cmd + " ; # __notif_id_" + notificationId;
+        kwinActivator.connectSource(taggedSource);
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -29,9 +84,9 @@ Item {
             // DND Toggle Button
             Rectangle {
                 Layout.fillWidth: true
-                height: 36
+                implicitHeight: 36
                 radius: 10
-                color: notifRoot.isDnd ? Qt.rgba(191, 90, 242, 0.25) : (dndMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(1, 1, 1, 0.06))
+                color: notifRoot.isDnd ? Qt.rgba(191/255, 90/255, 242/255, 0.25) : (dndMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(1, 1, 1, 0.06))
                 border.color: notifRoot.isDnd ? "#bf5af2" : Qt.rgba(1, 1, 1, 0.08)
                 border.width: 1
 
@@ -67,12 +122,12 @@ Item {
             // Clear All Button
             Rectangle {
                 implicitWidth: clearText.implicitWidth + 24
-                height: 36
+                implicitHeight: 36
                 radius: 10
-                color: clearMouse.containsMouse ? Qt.rgba(255, 69, 58, 0.25) : Qt.rgba(1, 1, 1, 0.06)
+                color: clearMouse.containsMouse ? Qt.rgba(1.0, 69/255, 58/255, 0.25) : Qt.rgba(1, 1, 1, 0.06)
                 border.color: clearMouse.containsMouse ? "#ff453a" : Qt.rgba(1, 1, 1, 0.08)
                 border.width: 1
-                visible: notifModel.count > 0
+                visible: notifRoot.notifCount > 0
 
                 RowLayout {
                     anchors.centerIn: parent
@@ -100,7 +155,11 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: notifModel.clear(0xFFFF)
+                    onClicked: {
+                        if (notifModel) {
+                            notifModel.clear(NM.Notifications.ClearExpired);
+                        }
+                    }
                 }
             }
         }
@@ -114,7 +173,7 @@ Item {
             ColumnLayout {
                 anchors.centerIn: parent
                 spacing: 12
-                visible: notifModel.count === 0
+                visible: notifRoot.notifCount === 0
 
                 Rectangle {
                     Layout.alignment: Qt.AlignHCenter
@@ -154,25 +213,48 @@ Item {
             ListView {
                 id: notifList
                 anchors.fill: parent
-                visible: notifModel.count > 0
+                visible: notifRoot.notifCount > 0
                 clip: true
                 spacing: 10
-                model: notifModel
+                model: notifRoot.notifModel
 
                 delegate: Rectangle {
                     id: notifItem
                     width: notifList.width
                     implicitHeight: notifCol.implicitHeight + 20
                     radius: 12
-                    color: Qt.rgba(1, 1, 1, 0.05)
-                    border.color: Qt.rgba(1, 1, 1, 0.08)
+                    readonly property string notifId: (model.id !== undefined ? model.id : index).toString()
+                    readonly property string cardHint: notifRoot.activeCardHints[notifId] || ""
+                    readonly property bool hasAction: model.hasDefaultAction === true
+                    readonly property bool canRaiseApp: !hasAction && ((model.desktopEntry && model.desktopEntry !== "") || (model.applicationName && model.applicationName !== ""))
+                    readonly property bool isInteractive: hasAction || canRaiseApp
+                    color: (isInteractive && cardMouse.containsMouse) ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.05)
+                    border.color: cardHint !== "" ? Qt.rgba(255/255, 149/255, 0, 0.5) : ((isInteractive && cardMouse.containsMouse) ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.08))
                     border.width: 1
+
+                    MouseArea {
+                        id: cardMouse
+                        anchors.fill: parent
+                        hoverEnabled: notifItem.isInteractive
+                        cursorShape: notifItem.isInteractive ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        z: 0
+
+                        onClicked: {
+                            if (notifItem.hasAction && notifRoot.notifModel) {
+                                notifRoot.notifModel.invokeDefaultAction(notifRoot.notifModel.index(index, 0), NM.Notifications.Close);
+                                notifRoot.actionInvoked();
+                            } else if (notifItem.canRaiseApp) {
+                                notifRoot.raiseApp(model.desktopEntry, model.applicationName, notifItem.notifId);
+                            }
+                        }
+                    }
 
                     ColumnLayout {
                         id: notifCol
                         anchors.fill: parent
                         anchors.margins: 10
                         spacing: 6
+                        z: 1
 
                         // Header: Icon, App Name, Time, Close
                         RowLayout {
@@ -186,17 +268,19 @@ Item {
                             }
 
                             Text {
-                                text: model.applicationName || i18n("System")
+                                text: notifItem.cardHint !== "" ? notifItem.cardHint : (model.applicationName || i18n("System"))
                                 font.family: "SF Hello"
                                 font.pixelSize: 12
-                                font.bold: true
-                                color: "#0a84ff"
+                                font.bold: notifItem.cardHint === ""
+                                font.italic: notifItem.cardHint !== ""
+                                color: notifItem.cardHint !== "" ? "#ff9f0a" : "#0a84ff"
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                             }
 
                             // Dismiss button
                             Rectangle {
+                                z: 2
                                 implicitWidth: 20
                                 implicitHeight: 20
                                 radius: 10
@@ -214,7 +298,12 @@ Item {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: notifModel.close(notifModel.index(index, 0))
+                                    onClicked: function(mouse) {
+                                        mouse.accepted = true;
+                                        if (notifRoot.notifModel) {
+                                            notifRoot.notifModel.close(notifRoot.notifModel.index(index, 0));
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -222,6 +311,7 @@ Item {
                         // Summary / Title
                         Text {
                             text: model.summary || ""
+                            textFormat: Text.PlainText
                             font.family: "SF Hello"
                             font.pixelSize: 13
                             font.bold: true
@@ -234,6 +324,7 @@ Item {
                         // Body
                         Text {
                             text: model.body || ""
+                            textFormat: Text.StyledText
                             font.family: "SF Hello"
                             font.pixelSize: 12
                             color: Qt.rgba(1, 1, 1, 0.7)

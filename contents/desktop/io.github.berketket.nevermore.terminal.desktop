@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Nevermore Terminal
+Comment=Slide-out managed terminal for Nevermore
+Exec=nevermore-term toggle
+Icon=utilities-terminal
+Type=Application
+Terminal=false
+Categories=System;TerminalEmulator;
+StartupWMClass=io.github.berketket.nevermore.terminal

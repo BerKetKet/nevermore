@@ -66,6 +66,32 @@ Rectangle {
 
     Component.onCompleted: refreshDays()
 
+    onVisibleChanged: {
+        if (visible) {
+            let t = new Date();
+            if (t.getDate() !== today.getDate() || t.getMonth() !== today.getMonth() || t.getFullYear() !== today.getFullYear()) {
+                today = t;
+                displayedYear = t.getFullYear();
+                displayedMonth = t.getMonth();
+                selectedDay = t.getDate();
+                refreshDays();
+            }
+        }
+    }
+
+    Timer {
+        interval: 60000
+        running: calRoot.visible
+        repeat: true
+        onTriggered: {
+            let t = new Date();
+            if (t.getDate() !== calRoot.today.getDate()) {
+                calRoot.today = t;
+                calRoot.refreshDays();
+            }
+        }
+    }
+
     function prevMonth() {
         if (displayedMonth === 0) {
             displayedMonth = 11;
@@ -112,7 +138,7 @@ Rectangle {
             }
 
             Text {
-                text: monthNames[displayedMonth] + " " + displayedYear
+                text: i18n("%1 %2", monthNames[displayedMonth], displayedYear)
                 font.family: "SF Hello"
                 font.pixelSize: 14
                 font.bold: true
@@ -239,7 +265,7 @@ Rectangle {
                         width: 26
                         height: 26
                         radius: 13
-                        color: isToday ? "#0a84ff" : (isSelected ? Qt.rgba(10, 132, 255, 0.25) : (cellMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.1) : "transparent"))
+                        color: isToday ? "#0a84ff" : (isSelected ? Qt.rgba(10/255, 132/255, 1.0, 0.25) : (cellMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.1) : "transparent"))
                         border.color: isSelected && !isToday ? "#0a84ff" : "transparent"
                         border.width: 1
 

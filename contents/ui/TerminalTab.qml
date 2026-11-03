@@ -1,592 +1,769 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtCore
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.plasma5support as Plasma5Support
 
 Item {
-    id: termRoot
+    id: termTabRoot
     Layout.fillWidth: true
     Layout.fillHeight: true
 
-    // --- State: Multi-Tab Sessions ---
-    property var terminalTabs: [
-        {
-            id: 1,
-            title: "Tab 1",
-            currentDir: "/home/bgg",
-            history: [
-                {
-                    type: "system",
-                    text: i18n("Raven Quick Terminal — Tab 1\nType a command or click 'Paste & Run'.")
-                }
-            ],
-            cmdHistory: [],
-            cmdHistoryIdx: -1
+    readonly property string userHome: String(StandardPaths.writableLocation(StandardPaths.HomeLocation)).replace(/^file:\/\//, "")
+
+    // --- State: Terminal Status ---
+    property string terminalStatus: "stopped" // "stopped", "running", "unknown"
+    property string terminalVisibility: "hidden" // "active", "visible", "minimized", "hidden"
+    property string terminalGeometry: ""
+    property int terminalPid: -1
+
+    // --- State: Background Tasks ---
+    property var bgTasks: []
+    property bool hasRunningTasks: false
+    property string currentLogUnit: ""
+    property string currentLogText: ""
+    property bool showLogs: false
+
+    readonly property bool shouldPollTasks: termTabRoot.visible || hasRunningTasks
+
+    // Polling timer for background tasks
+    Timer {
+        id: taskPollTimer
+        interval: termTabRoot.hasRunningTasks ? 3000 : 5000
+        repeat: true
+        running: termTabRoot.shouldPollTasks
+        onTriggered: termTabRoot.pollTasks()
+    }
+
+    Timer {
+        id: taskRefreshTimer
+        interval: 350
+        repeat: false
+        onTriggered: termTabRoot.pollTasks()
+    }
+
+    // Polling timer for terminal status
+    Timer {
+        id: termStatusTimer
+        interval: 2500
+        repeat: true
+        running: termTabRoot.visible
+        onTriggered: termTabRoot.pollTermStatus()
+    }
+
+    onVisibleChanged: {
+        if (visible) {
+            termTabRoot.pollTermStatus();
+            termTabRoot.pollTasks();
         }
-    ]
+    }
 
-    property int activeTabIndex: 0
-    property bool isExecuting: false
+    // --- Data Sources via Plasma5Support ---
 
-    readonly property var activeTab: (terminalTabs && terminalTabs.length > activeTabIndex) ? terminalTabs[activeTabIndex] : null
-
-    // Execution Engine via Plasma5Support
+    // Terminal Control Engine
     Plasma5Support.DataSource {
-        id: execEngine
+        id: termEngine
         engine: "executable"
         connectedSources: []
 
         onNewData: (source, data) => {
             disconnectSource(source);
-            termRoot.isExecuting = false;
+            if (source.indexOf("nevermore-term status") !== -1) {
+                let out = (data["stdout"] || "").trim();
+                let lines = out.split("\n");
+                let st = "stopped";
+                let vis = "hidden";
+                let geom = "";
+                let pid = -1;
 
-            if (!termRoot.activeTab) return;
-
-            let fullOut = data["stdout"] || "";
-            let fullErr = data["stderr"] || "";
-            let code = data["exit code"] ?? 0;
-
-            let parsedOut = fullOut;
-            let newPwd = termRoot.activeTab.currentDir;
-
-            if (fullOut.includes("__RAVEN_END__")) {
-                let parts = fullOut.split("__RAVEN_END__");
-                parsedOut = parts[0];
-                let trailer = parts[1].trim();
-                let lines = trailer.split("\n");
-                if (lines.length >= 1) {
-                    let c = parseInt(lines[0]);
-                    if (!isNaN(c)) code = c;
-                }
-                if (lines.length >= 2) {
-                    newPwd = lines[1].trim();
-                }
-            }
-
-            let resultText = "";
-            if (parsedOut.length > 0) resultText += parsedOut;
-            if (fullErr.length > 0) {
-                if (resultText.length > 0) resultText += "\n";
-                resultText += fullErr;
-            }
-
-            if (resultText === "" && code === 0) {
-                resultText = "(Command completed with exit code 0)";
-            }
-
-            // Append output to history
-            let tabsCopy = termRoot.terminalTabs.slice();
-            let tabCopy = Object.assign({}, tabsCopy[termRoot.activeTabIndex]);
-            let histCopy = tabCopy.history.slice();
-
-            histCopy.push({
-                type: "output",
-                text: resultText.trim(),
-                exitCode: code
-            });
-
-            tabCopy.history = histCopy;
-            tabCopy.currentDir = newPwd;
-            tabsCopy[termRoot.activeTabIndex] = tabCopy;
-            termRoot.terminalTabs = tabsCopy;
-
-            outputList.positionViewAtEnd();
-        }
-    }
-
-    // Clipboard Reader Engine
-    Plasma5Support.DataSource {
-        id: clipEngine
-        engine: "executable"
-        connectedSources: []
-
-        onNewData: (source, data) => {
-            disconnectSource(source);
-            if (source === "wl-paste") {
-                let clip = data["stdout"] || "";
-                clip = clip.trim();
-                if (clip.length > 0) {
-                    cmdInput.text = clip;
-                    termRoot.executeCommand(clip);
-                }
-            }
-        }
-    }
-
-    // Actions
-    function executeCommand(cmd) {
-        if (!cmd || cmd.trim() === "" || !activeTab) return;
-        cmd = cmd.trim();
-
-        // 1. Append command to display history
-        let tabsCopy = terminalTabs.slice();
-        let tabCopy = Object.assign({}, tabsCopy[activeTabIndex]);
-        let histCopy = tabCopy.history.slice();
-        let cmdHistCopy = tabCopy.cmdHistory.slice();
-
-        histCopy.push({
-            type: "input",
-            text: tabCopy.currentDir.replace("/home/bgg", "~") + " ❯ " + cmd
-        });
-        cmdHistCopy.push(cmd);
-
-        tabCopy.history = histCopy;
-        tabCopy.cmdHistory = cmdHistCopy;
-        tabCopy.cmdHistoryIdx = -1;
-        tabsCopy[activeTabIndex] = tabCopy;
-        terminalTabs = tabsCopy;
-
-        cmdInput.text = "";
-        isExecuting = true;
-        outputList.positionViewAtEnd();
-
-        // 2. Dispatch command through bash
-        let escapedCmd = cmd.replace(/'/g, "'\\''");
-        let wrapper = "cd '" + tabCopy.currentDir + "' ; eval '" + escapedCmd + "' ; echo '__RAVEN_END__$?' ; pwd";
-        execEngine.connectSource(wrapper);
-    }
-
-    function pasteAndExecute() {
-        clipEngine.connectSource("wl-paste");
-    }
-
-    function clearCurrentTab() {
-        if (!activeTab) return;
-        let tabsCopy = terminalTabs.slice();
-        let tabCopy = Object.assign({}, tabsCopy[activeTabIndex]);
-        tabCopy.history = [
-            {
-                type: "system",
-                text: i18n("Terminal buffer cleared.")
-            }
-        ];
-        tabsCopy[activeTabIndex] = tabCopy;
-        terminalTabs = tabsCopy;
-    }
-
-    function addTab() {
-        let nextId = terminalTabs.length + 1;
-        let tabsCopy = terminalTabs.slice();
-        tabsCopy.push({
-            id: nextId,
-            title: "Tab " + nextId,
-            currentDir: "/home/bgg",
-            history: [
-                {
-                    type: "system",
-                    text: i18n("Raven Quick Terminal — Tab " + nextId)
-                }
-            ],
-            cmdHistory: [],
-            cmdHistoryIdx: -1
-        });
-        terminalTabs = tabsCopy;
-        activeTabIndex = terminalTabs.length - 1;
-    }
-
-    function closeTab(index) {
-        if (terminalTabs.length <= 1) return;
-        let tabsCopy = terminalTabs.slice();
-        tabsCopy.splice(index, 1);
-        terminalTabs = tabsCopy;
-        if (activeTabIndex >= terminalTabs.length) {
-            activeTabIndex = terminalTabs.length - 1;
-        }
-    }
-
-    ColumnLayout {
-        anchors.fill: parent
-        spacing: 8
-
-        // --- Row 1: Terminal Tab Bar ([ Tab 1 ] [ Tab 2 ] [ + ]) ---
-        ScrollView {
-            Layout.fillWidth: true
-            implicitHeight: 32
-            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-            ScrollBar.vertical.policy: ScrollBar.AlwaysOff
-
-            RowLayout {
-                spacing: 6
-
-                Repeater {
-                    model: termRoot.terminalTabs
-
-                    Rectangle {
-                        implicitWidth: tabLabel.implicitWidth + (termRoot.terminalTabs.length > 1 ? 34 : 20)
-                        implicitHeight: 28
-                        radius: 8
-                        color: termRoot.activeTabIndex === index ? Qt.rgba(1, 1, 1, 0.18) : (tabM.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(1, 1, 1, 0.04))
-                        border.color: termRoot.activeTabIndex === index ? "#0a84ff" : Qt.rgba(1, 1, 1, 0.08)
-                        border.width: 1
-
-                        RowLayout {
-                            anchors.centerIn: parent
-                            spacing: 6
-
-                            Kirigami.Icon {
-                                source: "utilities-terminal"
-                                implicitWidth: 12
-                                implicitHeight: 12
-                                color: termRoot.activeTabIndex === index ? "#0a84ff" : Qt.rgba(1, 1, 1, 0.5)
-                            }
-
-                            Text {
-                                id: tabLabel
-                                text: modelData.title
-                                font.family: "SF Hello"
-                                font.pixelSize: 11
-                                font.bold: termRoot.activeTabIndex === index
-                                color: termRoot.activeTabIndex === index ? "#ffffff" : Qt.rgba(1, 1, 1, 0.6)
-                            }
-
-                            // Close X
-                            Rectangle {
-                                implicitWidth: 14
-                                implicitHeight: 14
-                                radius: 7
-                                color: closeM.containsMouse ? Qt.rgba(255, 69, 58, 0.3) : "transparent"
-                                visible: termRoot.terminalTabs.length > 1
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "✕"
-                                    font.pixelSize: 9
-                                    color: closeM.containsMouse ? "#ff453a" : Qt.rgba(1, 1, 1, 0.5)
-                                }
-
-                                MouseArea {
-                                    id: closeM
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: termRoot.closeTab(index)
-                                }
-                            }
-                        }
-
-                        MouseArea {
-                            id: tabM
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: termRoot.activeTabIndex = index
-                        }
+                for (let i = 0; i < lines.length; i++) {
+                    let line = lines[i].trim();
+                    if (line.startsWith("status: ")) st = line.substring(8).trim();
+                    else if (line.startsWith("visibility: ")) vis = line.substring(12).trim();
+                    else if (line.startsWith("geometry: ")) geom = line.substring(10).trim();
+                    else if (line.startsWith("pid: ")) {
+                        let p = parseInt(line.substring(5).trim(), 10);
+                        if (!isNaN(p)) pid = p;
                     }
                 }
 
-                // New Tab Button (+)
-                Rectangle {
-                    implicitWidth: 28
-                    implicitHeight: 28
-                    radius: 8
-                    color: addM.containsMouse ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.05)
-                    border.color: Qt.rgba(1, 1, 1, 0.08)
+                termTabRoot.terminalStatus = st;
+                termTabRoot.terminalVisibility = vis;
+                termTabRoot.terminalGeometry = geom;
+                termTabRoot.terminalPid = pid;
+            } else if (source.indexOf("nevermore-term toggle") !== -1) {
+                // Refresh status shortly after toggle
+                termStatusTimer.restart();
+                termTabRoot.pollTermStatus();
+            }
+        }
+    }
 
-                    Text {
-                        anchors.centerIn: parent
-                        text: "+"
-                        font.pixelSize: 16
-                        font.bold: true
+    // Tasks Polling Engine
+    Plasma5Support.DataSource {
+        id: taskPollEngine
+        engine: "executable"
+        connectedSources: []
+
+        onNewData: (source, data) => {
+            disconnectSource(source);
+            let out = (data["stdout"] || "").trim();
+            try {
+                let parsed = JSON.parse(out);
+                if (Array.isArray(parsed)) {
+                    let validList = [];
+                    let anyRunning = false;
+                    for (let i = 0; i < parsed.length; i++) {
+                        let item = parsed[i];
+                        if (termTabRoot.isValidUnitName(item.unit)) {
+                            let category = "other";
+                            if (item.sub === "running") {
+                                category = "running";
+                                anyRunning = true;
+                            } else if (item.active === "failed" || item.sub === "failed") {
+                                category = "failed";
+                            } else if (item.sub === "exited") {
+                                category = "exited";
+                            } else {
+                                category = item.sub || item.active || "other";
+                            }
+                            item.statusCategory = category;
+                            validList.push(item);
+                        }
+                    }
+                    termTabRoot.hasRunningTasks = anyRunning;
+                    termTabRoot.bgTasks = validList;
+
+                    if (validList.length > 0) {
+                        taskShowEngine.connectSource("systemctl --user show \"nevermore-task-*\" --property=Id,ExecMainStatus");
+                    }
+                }
+            } catch (e) {
+                // JSON parse error or empty
+            }
+        }
+    }
+
+    // Tasks Exit Code Detail Engine
+    Plasma5Support.DataSource {
+        id: taskShowEngine
+        engine: "executable"
+        connectedSources: []
+
+        onNewData: (source, data) => {
+            disconnectSource(source);
+            let out = (data["stdout"] || "").trim();
+            if (out.length === 0) return;
+
+            let statusMap = {};
+            let lines = out.split("\n");
+            let currentId = "";
+
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i].trim();
+                if (line.startsWith("Id=")) {
+                    currentId = line.substring(3).trim();
+                } else if (line.startsWith("ExecMainStatus=") && currentId !== "") {
+                    let st = parseInt(line.substring(15).trim(), 10);
+                    if (!isNaN(st)) {
+                        statusMap[currentId] = st;
+                    }
+                }
+            }
+
+            let tasks = termTabRoot.bgTasks.slice();
+            let updatedTasks = [];
+            for (let j = 0; j < tasks.length; j++) {
+                let u = tasks[j].unit;
+                if (statusMap[u] !== undefined) {
+                    updatedTasks.push(Object.assign({}, tasks[j], { execStatus: statusMap[u] }));
+                } else {
+                    updatedTasks.push(Object.assign({}, tasks[j]));
+                }
+            }
+            termTabRoot.bgTasks = updatedTasks;
+        }
+    }
+
+    // Task Actions & Logs Engine
+    Plasma5Support.DataSource {
+        id: taskActionEngine
+        engine: "executable"
+        connectedSources: []
+
+        onNewData: (source, data) => {
+            disconnectSource(source);
+            if (source.startsWith("journalctl --user -u ")) {
+                let stdout = (data["stdout"] || "").trim();
+                let stderr = (data["stderr"] || "").trim();
+                let combined = stdout;
+                if (stderr.length > 0) {
+                    if (combined.length > 0) combined += "\n";
+                    combined += stderr;
+                }
+                if (combined.length === 0) {
+                    combined = i18n("(No logs found for unit)");
+                }
+                termTabRoot.currentLogText = combined;
+                termTabRoot.showLogs = true;
+            }
+        }
+    }
+
+    // Helper Execution Engine
+    Plasma5Support.DataSource {
+        id: helperEngine
+        engine: "executable"
+        connectedSources: []
+
+        onNewData: (source, data) => {
+            disconnectSource(source);
+        }
+    }
+
+    // --- Action Methods ---
+
+    function pollTermStatus() {
+        termEngine.connectSource("nevermore-term status");
+    }
+
+    function toggleTerminal() {
+        termEngine.connectSource("nevermore-term toggle");
+    }
+
+    function pollTasks() {
+        taskPollEngine.connectSource("systemctl --user list-units \"nevermore-task-*\" --all --output=json");
+    }
+
+    function isValidUnitName(unit) {
+        if (!unit || typeof unit !== "string") return false;
+        return /^nevermore-task-[0-9]+\.service$/.test(unit);
+    }
+
+    function launchBackgroundTask(cmd) {
+        if (!cmd || cmd.trim() === "") return;
+        cmd = cmd.trim();
+        let escapedCmd = cmd.replace(/'/g, "'\\''");
+        let helperPath = userHome + "/.local/bin/nevermore-run";
+        helperEngine.connectSource("\"" + helperPath + "\" '" + escapedCmd + "'");
+        cmdInput.text = "";
+        taskRefreshTimer.restart();
+    }
+
+    function viewTaskLogs(unit) {
+        if (!isValidUnitName(unit)) return;
+        termTabRoot.currentLogUnit = unit;
+        termTabRoot.currentLogText = i18n("Loading logs...");
+        termTabRoot.showLogs = true;
+        taskActionEngine.connectSource("journalctl --user -u '" + unit + "' -n 200 --no-pager");
+    }
+
+    function stopOrDismissTask(unit, isFinished) {
+        if (!isValidUnitName(unit)) return;
+        let escaped = "'" + unit + "'";
+        let cmd = "";
+        if (isFinished) {
+            cmd = "systemctl --user stop " + escaped + " 2>/dev/null; systemctl --user reset-failed " + escaped + " 2>/dev/null";
+        } else {
+            cmd = "systemctl --user stop " + escaped;
+        }
+        helperEngine.connectSource(cmd);
+        taskRefreshTimer.restart();
+    }
+
+    function dismissAllFinishedTasks() {
+        let tasks = termTabRoot.bgTasks;
+        let unitsToDismiss = [];
+        for (let i = 0; i < tasks.length; i++) {
+            let t = tasks[i];
+            if (t.statusCategory === "exited" || t.statusCategory === "failed") {
+                unitsToDismiss.push("'" + t.unit + "'");
+            }
+        }
+        if (unitsToDismiss.length === 0) return;
+        let joined = unitsToDismiss.join(" ");
+        helperEngine.connectSource("systemctl --user stop " + joined + " 2>/dev/null; systemctl --user reset-failed " + joined + " 2>/dev/null");
+        taskRefreshTimer.restart();
+    }
+
+    // --- UI Layout ---
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 12
+
+        // ==========================================
+        // SECTION 1: Managed Terminal Control
+        // ==========================================
+        Rectangle {
+            Layout.fillWidth: true
+            implicitHeight: termCol.implicitHeight + 20
+            radius: 12
+            color: Qt.rgba(1, 1, 1, 0.05)
+            border.color: Qt.rgba(1, 1, 1, 0.08)
+            border.width: 1
+
+            ColumnLayout {
+                id: termCol
+                anchors.fill: parent
+                anchors.margins: 10
+                spacing: 10
+
+                // Title Row
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Kirigami.Icon {
+                        source: "utilities-terminal"
+                        implicitWidth: 16
+                        implicitHeight: 16
                         color: "#0a84ff"
                     }
 
+                    Text {
+                        text: i18n("Slide-out Terminal")
+                        font.family: "SF Hello"
+                        font.pixelSize: 13
+                        font.bold: true
+                        color: "#ffffff"
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    // Status Indicator
+                    Rectangle {
+                        implicitWidth: 8
+                        implicitHeight: 8
+                        radius: 4
+                        color: termTabRoot.terminalStatus === "running"
+                               ? (termTabRoot.terminalVisibility === "active" ? "#30d158" : "#ffd60a")
+                               : Qt.rgba(1, 1, 1, 0.3)
+                    }
+
+                    Text {
+                        text: termTabRoot.terminalStatus === "running"
+                              ? (termTabRoot.terminalVisibility === "active" ? i18n("Active") : (termTabRoot.terminalVisibility === "minimized" ? i18n("Minimized") : i18n("Running")))
+                              : i18n("Stopped")
+                        font.family: "SF Hello"
+                        font.pixelSize: 11
+                        color: Qt.rgba(1, 1, 1, 0.6)
+                    }
+                }
+
+                // Status Details
+                Text {
+                    text: termTabRoot.terminalStatus === "running"
+                          ? i18n("PID %1 • Docked at right edge (%2)", termTabRoot.terminalPid, termTabRoot.terminalGeometry !== "" ? termTabRoot.terminalGeometry : "397px")
+                          : i18n("Press Show Terminal or Meta+Shift+N to open")
+                    font.family: "SF Hello"
+                    font.pixelSize: 11
+                    color: Qt.rgba(1, 1, 1, 0.5)
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                }
+
+                // Prominent Show / Hide Button
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 36
+                    radius: 8
+                    color: toggleMouse.containsMouse ? "#006ee6" : "#0a84ff"
+
+                    RowLayout {
+                        anchors.centerIn: parent
+                        spacing: 8
+
+                        Kirigami.Icon {
+                            source: termTabRoot.terminalVisibility === "active" ? "window-minimize" : "utilities-terminal"
+                            implicitWidth: 16
+                            implicitHeight: 16
+                            color: "#ffffff"
+                        }
+
+                        Text {
+                            text: termTabRoot.terminalVisibility === "active" ? i18n("Hide Terminal") : i18n("Show Terminal")
+                            font.family: "SF Hello"
+                            font.pixelSize: 12
+                            font.bold: true
+                            color: "#ffffff"
+                        }
+                    }
+
                     MouseArea {
-                        id: addM
+                        id: toggleMouse
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: termRoot.addTab()
+                        onClicked: termTabRoot.toggleTerminal()
                     }
                 }
             }
         }
 
-        // --- Row 2: Action Buttons ([ 📋 Paste & Run ] [ ▶ Run ] [ 🧹 Clear ]) ---
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 6
-
-            // Paste & Run
-            Rectangle {
-                Layout.fillWidth: true
-                height: 30
-                radius: 8
-                color: pasteM.containsMouse ? "#006ee6" : "#0a84ff"
-
-                RowLayout {
-                    anchors.centerIn: parent
-                    spacing: 6
-                    Kirigami.Icon {
-                        source: "edit-paste"
-                        implicitWidth: 14
-                        implicitHeight: 14
-                        color: "#ffffff"
-                    }
-                    Text {
-                        text: i18n("Paste & Run")
-                        font.family: "SF Hello"
-                        font.pixelSize: 11
-                        font.bold: true
-                        color: "#ffffff"
-                    }
-                }
-
-                MouseArea {
-                    id: pasteM
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: termRoot.pasteAndExecute()
-                }
-            }
-
-            // Execute
-            Rectangle {
-                implicitWidth: runTxt.implicitWidth + 20
-                height: 30
-                radius: 8
-                color: runM.containsMouse ? Qt.rgba(48, 209, 88, 0.3) : Qt.rgba(48, 209, 88, 0.15)
-                border.color: "#30d158"
-                border.width: 1
-
-                RowLayout {
-                    anchors.centerIn: parent
-                    spacing: 4
-                    Kirigami.Icon {
-                        source: "system-run"
-                        implicitWidth: 13
-                        implicitHeight: 13
-                        color: "#30d158"
-                    }
-                    Text {
-                        id: runTxt
-                        text: i18n("Run")
-                        font.family: "SF Hello"
-                        font.pixelSize: 11
-                        font.bold: true
-                        color: "#30d158"
-                    }
-                }
-
-                MouseArea {
-                    id: runM
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: termRoot.executeCommand(cmdInput.text)
-                }
-            }
-
-            // Clear
-            Rectangle {
-                implicitWidth: clearTxt.implicitWidth + 20
-                height: 30
-                radius: 8
-                color: clearM.containsMouse ? Qt.rgba(255, 69, 58, 0.25) : Qt.rgba(1, 1, 1, 0.06)
-                border.color: Qt.rgba(1, 1, 1, 0.08)
-                border.width: 1
-
-                RowLayout {
-                    anchors.centerIn: parent
-                    spacing: 4
-                    Kirigami.Icon {
-                        source: "edit-clear"
-                        implicitWidth: 13
-                        implicitHeight: 13
-                        color: clearM.containsMouse ? "#ff453a" : Qt.rgba(1, 1, 1, 0.7)
-                    }
-                    Text {
-                        id: clearTxt
-                        text: i18n("Clear")
-                        font.family: "SF Hello"
-                        font.pixelSize: 11
-                        font.bold: true
-                        color: clearM.containsMouse ? "#ff453a" : Qt.rgba(1, 1, 1, 0.8)
-                    }
-                }
-
-                MouseArea {
-                    id: clearM
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: termRoot.clearCurrentTab()
-                }
-            }
-        }
-
-        // --- Current Directory Indicator ---
-        Rectangle {
-            Layout.fillWidth: true
-            height: 22
-            radius: 6
-            color: Qt.rgba(1, 1, 1, 0.03)
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 6
-                anchors.rightMargin: 6
-                spacing: 6
-
-                Kirigami.Icon {
-                    source: "folder"
-                    implicitWidth: 11
-                    implicitHeight: 11
-                    color: Qt.rgba(1, 1, 1, 0.4)
-                }
-
-                Text {
-                    text: termRoot.activeTab ? termRoot.activeTab.currentDir.replace("/home/bgg", "~") : "~"
-                    font.family: "SF Mono"
-                    font.pixelSize: 10
-                    color: Qt.rgba(1, 1, 1, 0.5)
-                    elide: Text.ElideMiddle
-                    Layout.fillWidth: true
-                }
-
-                Text {
-                    text: termRoot.isExecuting ? i18n("Running...") : i18n("Idle")
-                    font.family: "SF Hello"
-                    font.pixelSize: 10
-                    font.bold: true
-                    color: termRoot.isExecuting ? "#ff9f0a" : "#30d158"
-                }
-            }
-        }
-
-        // --- Terminal Output Buffer (Selectable, Scrollable) ---
+        // ==========================================
+        // SECTION 2: Background Tasks
+        // ==========================================
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            radius: 10
-            color: "#0d0d10"
+            radius: 12
+            color: Qt.rgba(1, 1, 1, 0.05)
             border.color: Qt.rgba(1, 1, 1, 0.08)
             border.width: 1
-            clip: true
 
-            ListView {
-                id: outputList
+            ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 8
-                spacing: 6
-                model: termRoot.activeTab ? termRoot.activeTab.history : []
+                anchors.margins: 10
+                spacing: 8
 
-                ScrollBar.vertical: ScrollBar {
-                    active: true
-                }
-
-                delegate: Item {
-                    width: outputList.width
-                    implicitHeight: contentTxt.implicitHeight
-
-                    TextEdit {
-                        id: contentTxt
-                        width: parent.width
-                        readOnly: true
-                        selectByMouse: true
-                        wrapMode: TextEdit.Wrap
-                        font.family: "SF Mono"
-                        font.pixelSize: 11
-
-                        color: {
-                            if (modelData.type === "input") return "#30d158";
-                            if (modelData.type === "system") return "#8e8e93";
-                            if (modelData.exitCode && modelData.exitCode !== 0) return "#ff453a";
-                            return "#f2f2f7";
-                        }
-
-                        font.bold: modelData.type === "input"
-                        text: modelData.text || ""
-                    }
-                }
-            }
-        }
-
-        // --- Terminal Input Bar at Bottom ---
-        Rectangle {
-            Layout.fillWidth: true
-            height: 36
-            radius: 8
-            color: Qt.rgba(1, 1, 1, 0.06)
-            border.color: cmdInput.activeFocus ? "#0a84ff" : Qt.rgba(1, 1, 1, 0.1)
-            border.width: 1
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 8
-                anchors.rightMargin: 4
-                spacing: 6
-
-                Text {
-                    text: "❯"
-                    font.family: "SF Mono"
-                    font.pixelSize: 13
-                    font.bold: true
-                    color: "#0a84ff"
-                }
-
-                TextField {
-                    id: cmdInput
+                // Header Row
+                RowLayout {
                     Layout.fillWidth: true
-                    placeholderText: i18n("Command... (Enter to run)")
-                    font.family: "SF Mono"
-                    font.pixelSize: 11
-                    color: "#ffffff"
-                    background: null
-                    focus: true
+                    spacing: 8
 
-                    onAccepted: {
-                        termRoot.executeCommand(text);
+                    Kirigami.Icon {
+                        source: "system-switch-user"
+                        implicitWidth: 15
+                        implicitHeight: 15
+                        color: "#bf5af2"
                     }
-
-                    Keys.onUpPressed: {
-                        if (!termRoot.activeTab) return;
-                        let hist = termRoot.activeTab.cmdHistory;
-                        if (hist.length === 0) return;
-                        let idx = termRoot.activeTab.cmdHistoryIdx;
-                        if (idx === -1) idx = hist.length - 1;
-                        else if (idx > 0) idx--;
-
-                        termRoot.activeTab.cmdHistoryIdx = idx;
-                        text = hist[idx];
-                    }
-
-                    Keys.onDownPressed: {
-                        if (!termRoot.activeTab) return;
-                        let hist = termRoot.activeTab.cmdHistory;
-                        let idx = termRoot.activeTab.cmdHistoryIdx;
-                        if (idx !== -1 && idx < hist.length - 1) {
-                            idx++;
-                            termRoot.activeTab.cmdHistoryIdx = idx;
-                            text = hist[idx];
-                        } else {
-                            termRoot.activeTab.cmdHistoryIdx = -1;
-                            text = "";
-                        }
-                    }
-                }
-
-                // Send Icon Button
-                Rectangle {
-                    implicitWidth: 28
-                    implicitHeight: 28
-                    radius: 6
-                    color: sendM.containsMouse ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.05)
 
                     Text {
-                        anchors.centerIn: parent
-                        text: "⏎"
+                        text: i18n("Background Tasks")
+                        font.family: "SF Hello"
                         font.pixelSize: 13
+                        font.bold: true
                         color: "#ffffff"
                     }
 
-                    MouseArea {
-                        id: sendM
+                    Rectangle {
+                        implicitWidth: Math.max(16, countText.implicitWidth + 8)
+                        implicitHeight: 16
+                        radius: 8
+                        color: termTabRoot.hasRunningTasks ? "#bf5af2" : Qt.rgba(1, 1, 1, 0.15)
+                        visible: termTabRoot.bgTasks.length > 0
+
+                        Text {
+                            id: countText
+                            anchors.centerIn: parent
+                            text: termTabRoot.bgTasks.length
+                            font.family: "SF Hello"
+                            font.pixelSize: 10
+                            font.bold: true
+                            color: "#ffffff"
+                        }
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    // Clear Finished Button
+                    Text {
+                        text: i18n("Clear Finished")
+                        font.family: "SF Hello"
+                        font.pixelSize: 10
+                        color: clearFinishedMouse.containsMouse ? "#ff453a" : Qt.rgba(1, 1, 1, 0.4)
+                        visible: {
+                            for (let i = 0; i < termTabRoot.bgTasks.length; i++) {
+                                if (termTabRoot.bgTasks[i].statusCategory === "exited" || termTabRoot.bgTasks[i].statusCategory === "failed") return true;
+                            }
+                            return false;
+                        }
+
+                        MouseArea {
+                            id: clearFinishedMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: termTabRoot.dismissAllFinishedTasks()
+                        }
+                    }
+                }
+
+                // Command Launch Box
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 30
+                        radius: 6
+                        color: Qt.rgba(0, 0, 0, 0.3)
+                        border.color: cmdInput.activeFocus ? "#bf5af2" : Qt.rgba(1, 1, 1, 0.1)
+                        border.width: 1
+
+                        TextInput {
+                            id: cmdInput
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            verticalAlignment: TextInput.AlignVCenter
+                            font.family: "Hack Nerd Font"
+                            font.pixelSize: 11
+                            color: "#ffffff"
+                            clip: true
+
+                            Text {
+                                anchors.fill: parent
+                                verticalAlignment: Text.AlignVCenter
+                                text: i18n("Launch background command (e.g. sleep 10)...")
+                                font.family: "SF Hello"
+                                font.pixelSize: 11
+                                color: Qt.rgba(1, 1, 1, 0.3)
+                                visible: !cmdInput.text && !cmdInput.activeFocus
+                            }
+
+                            Keys.onReturnPressed: termTabRoot.launchBackgroundTask(cmdInput.text)
+                        }
+                    }
+
+                    Rectangle {
+                        implicitWidth: launchText.implicitWidth + 14
+                        implicitHeight: 30
+                        radius: 6
+                        color: launchMouse.containsMouse ? Qt.rgba(191/255, 90/255, 242/255, 0.35) : Qt.rgba(191/255, 90/255, 242/255, 0.2)
+                        border.color: "#bf5af2"
+                        border.width: 1
+
+                        Text {
+                            id: launchText
+                            anchors.centerIn: parent
+                            text: i18n("Launch")
+                            font.family: "SF Hello"
+                            font.pixelSize: 11
+                            font.bold: true
+                            color: "#bf5af2"
+                        }
+
+                        MouseArea {
+                            id: launchMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: termTabRoot.launchBackgroundTask(cmdInput.text)
+                        }
+                    }
+                }
+
+                // Logs View or Tasks List View
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+
+                    // --- Subview A: Task Logs ---
+                    ColumnLayout {
                         anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: termRoot.executeCommand(cmdInput.text)
+                        visible: termTabRoot.showLogs
+                        spacing: 6
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            Text {
+                                text: i18n("Logs: %1", termTabRoot.currentLogUnit)
+                                font.family: "SF Hello"
+                                font.pixelSize: 11
+                                font.bold: true
+                                color: "#bf5af2"
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+
+                            Rectangle {
+                                implicitWidth: closeLogTxt.implicitWidth + 12
+                                implicitHeight: 22
+                                radius: 4
+                                color: closeLogM.containsMouse ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.08)
+
+                                Text {
+                                    id: closeLogTxt
+                                    anchors.centerIn: parent
+                                    text: i18n("Back to Tasks")
+                                    font.family: "SF Hello"
+                                    font.pixelSize: 10
+                                    color: "#ffffff"
+                                }
+
+                                MouseArea {
+                                    id: closeLogM
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: termTabRoot.showLogs = false
+                                }
+                            }
+                        }
+
+                        ScrollView {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            clip: true
+
+                            TextArea {
+                                text: termTabRoot.currentLogText
+                                readOnly: true
+                                textFormat: TextEdit.PlainText
+                                font.family: "Hack Nerd Font"
+                                font.pixelSize: 10
+                                color: "#d1d5db"
+                                background: Rectangle {
+                                    color: Qt.rgba(0, 0, 0, 0.4)
+                                    radius: 6
+                                    border.color: Qt.rgba(1, 1, 1, 0.08)
+                                }
+                            }
+                        }
+                    }
+
+                    // --- Subview B: Tasks List ---
+                    ListView {
+                        id: taskListView
+                        anchors.fill: parent
+                        visible: !termTabRoot.showLogs
+                        clip: true
+                        spacing: 6
+                        model: termTabRoot.bgTasks
+
+                        delegate: Rectangle {
+                            width: taskListView.width
+                            implicitHeight: taskItemCol.implicitHeight + 12
+                            radius: 8
+                            color: Qt.rgba(1, 1, 1, 0.04)
+                            border.color: Qt.rgba(1, 1, 1, 0.06)
+                            border.width: 1
+
+                            ColumnLayout {
+                                id: taskItemCol
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 6
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+
+                                    // Category status badge
+                                    Rectangle {
+                                        implicitWidth: catTxt.implicitWidth + 10
+                                        implicitHeight: 18
+                                        radius: 4
+                                        color: modelData.statusCategory === "running" ? Qt.rgba(48/255, 209/255, 88/255, 0.2)
+                                             : (modelData.statusCategory === "failed" ? Qt.rgba(255/255, 69/255, 58/255, 0.2)
+                                             : Qt.rgba(1, 1, 1, 0.1))
+                                        border.color: modelData.statusCategory === "running" ? "#30d158"
+                                                    : (modelData.statusCategory === "failed" ? "#ff453a"
+                                                    : Qt.rgba(1, 1, 1, 0.2))
+                                        border.width: 1
+
+                                        Text {
+                                            id: catTxt
+                                            anchors.centerIn: parent
+                                            text: modelData.statusCategory === "running" ? i18n("RUNNING")
+                                                : (modelData.statusCategory === "failed" ? i18n("FAILED")
+                                                : (modelData.execStatus !== undefined ? i18n("EXIT %1", modelData.execStatus) : i18n("EXITED")))
+                                            font.family: "SF Hello"
+                                            font.pixelSize: 9
+                                            font.bold: true
+                                            color: modelData.statusCategory === "running" ? "#30d158"
+                                                 : (modelData.statusCategory === "failed" ? "#ff453a"
+                                                 : "#ffffff")
+                                        }
+                                    }
+
+                                    Text {
+                                        text: modelData.unit
+                                        font.family: "Hack Nerd Font"
+                                        font.pixelSize: 10
+                                        color: "#ffffff"
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                    }
+
+                                    // Logs Action
+                                    Rectangle {
+                                        implicitWidth: logTxt.implicitWidth + 10
+                                        implicitHeight: 20
+                                        radius: 4
+                                        color: logM.containsMouse ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.08)
+
+                                        Text {
+                                            id: logTxt
+                                            anchors.centerIn: parent
+                                            text: i18n("Logs")
+                                            font.family: "SF Hello"
+                                            font.pixelSize: 10
+                                            color: "#0a84ff"
+                                        }
+
+                                        MouseArea {
+                                            id: logM
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: termTabRoot.viewTaskLogs(modelData.unit)
+                                        }
+                                    }
+
+                                    // Stop / Dismiss Action
+                                    Rectangle {
+                                        implicitWidth: actTxt.implicitWidth + 10
+                                        implicitHeight: 20
+                                        radius: 4
+                                        readonly property bool isFinished: (modelData.statusCategory === "exited" || modelData.statusCategory === "failed")
+                                        color: actM.containsMouse
+                                               ? (isFinished ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1.0, 69/255, 58/255, 0.25))
+                                               : (isFinished ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(1.0, 69/255, 58/255, 0.15))
+
+                                        Text {
+                                            id: actTxt
+                                            anchors.centerIn: parent
+                                            text: (modelData.statusCategory === "exited" || modelData.statusCategory === "failed") ? i18n("Dismiss") : i18n("Stop")
+                                            font.family: "SF Hello"
+                                            font.pixelSize: 10
+                                            color: (modelData.statusCategory === "exited" || modelData.statusCategory === "failed") ? Qt.rgba(1, 1, 1, 0.6) : "#ff453a"
+                                        }
+
+                                        MouseArea {
+                                            id: actM
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: termTabRoot.stopOrDismissTask(modelData.unit, (modelData.statusCategory === "exited" || modelData.statusCategory === "failed"))
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    text: modelData.description || ""
+                                    font.family: "SF Hello"
+                                    font.pixelSize: 10
+                                    color: Qt.rgba(1, 1, 1, 0.4)
+                                    visible: (modelData.description || "") !== ""
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                            }
+                        }
+
+                        // Empty tasks state
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: parent.width - 40
+                            height: 60
+                            color: "transparent"
+                            visible: termTabRoot.bgTasks.length === 0
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: i18n("No background tasks active.\nEnter a command above to launch.")
+                                font.family: "SF Hello"
+                                font.pixelSize: 11
+                                color: Qt.rgba(1, 1, 1, 0.35)
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+                        }
                     }
                 }
             }

@@ -20,8 +20,8 @@ Rectangle {
     readonly property bool hasSource: source !== null && source !== undefined
 
     readonly property int maxVol: Vol.PulseAudio.NormalVolume
-    readonly property int outputPercent: hasSink && maxVol > 0 ? Math.round((sink.volume / maxVol) * 100) : 50
-    readonly property int inputPercent: hasSource && maxVol > 0 ? Math.round((source.volume / maxVol) * 100) : 50
+    readonly property int outputPercent: hasSink && maxVol > 0 ? Math.round((sink.volume / maxVol) * 100) : 0
+    readonly property int inputPercent: hasSource && maxVol > 0 ? Math.round((source.volume / maxVol) * 100) : 0
 
     ColumnLayout {
         id: volCol
@@ -61,7 +61,8 @@ Rectangle {
                     implicitWidth: 26
                     implicitHeight: 26
                     radius: 13
-                    color: outMuteM.containsMouse ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.06)
+                    opacity: volRoot.hasSink ? 1.0 : 0.4
+                    color: outMuteM.containsMouse && volRoot.hasSink ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.06)
 
                     Kirigami.Icon {
                         anchors.centerIn: parent
@@ -73,8 +74,9 @@ Rectangle {
                     MouseArea {
                         id: outMuteM
                         anchors.fill: parent
+                        enabled: volRoot.hasSink
                         hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: if (volRoot.hasSink) volRoot.sink.muted = !volRoot.sink.muted
                     }
                 }
@@ -84,23 +86,25 @@ Rectangle {
                     font.family: "SF Hello"
                     font.pixelSize: 12
                     font.bold: true
-                    color: "#ffffff"
+                    color: volRoot.hasSink ? "#ffffff" : Qt.rgba(1, 1, 1, 0.5)
                 }
 
                 Item { Layout.fillWidth: true }
 
                 Text {
-                    text: volRoot.hasSink ? (volRoot.sink.muted ? i18n("Muted") : volRoot.outputPercent + "%") : "60%"
+                    text: volRoot.hasSink ? (volRoot.sink.muted ? i18n("Muted") : i18n("%1%", volRoot.outputPercent)) : "—"
                     font.family: "SF Hello"
                     font.pixelSize: 12
                     font.bold: true
-                    color: (volRoot.hasSink && volRoot.sink.muted) ? "#ff453a" : "#30d158"
+                    color: !volRoot.hasSink ? Qt.rgba(1, 1, 1, 0.4) : (volRoot.sink.muted ? "#ff453a" : "#30d158")
                 }
             }
 
             Slider {
                 id: outSlider
                 Layout.fillWidth: true
+                enabled: volRoot.hasSink
+                opacity: volRoot.hasSink ? 1.0 : 0.4
                 from: 0
                 to: 100
                 value: volRoot.outputPercent
@@ -126,7 +130,8 @@ Rectangle {
                     implicitWidth: 26
                     implicitHeight: 26
                     radius: 13
-                    color: inMuteM.containsMouse ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.06)
+                    opacity: volRoot.hasSource ? 1.0 : 0.4
+                    color: inMuteM.containsMouse && volRoot.hasSource ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.06)
 
                     Kirigami.Icon {
                         anchors.centerIn: parent
@@ -138,8 +143,9 @@ Rectangle {
                     MouseArea {
                         id: inMuteM
                         anchors.fill: parent
+                        enabled: volRoot.hasSource
                         hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: if (volRoot.hasSource) volRoot.source.muted = !volRoot.source.muted
                     }
                 }
@@ -149,23 +155,25 @@ Rectangle {
                     font.family: "SF Hello"
                     font.pixelSize: 12
                     font.bold: true
-                    color: "#ffffff"
+                    color: volRoot.hasSource ? "#ffffff" : Qt.rgba(1, 1, 1, 0.5)
                 }
 
                 Item { Layout.fillWidth: true }
 
                 Text {
-                    text: volRoot.hasSource ? (volRoot.source.muted ? i18n("Muted") : volRoot.inputPercent + "%") : "80%"
+                    text: volRoot.hasSource ? (volRoot.source.muted ? i18n("Muted") : i18n("%1%", volRoot.inputPercent)) : "—"
                     font.family: "SF Hello"
                     font.pixelSize: 12
                     font.bold: true
-                    color: (volRoot.hasSource && volRoot.source.muted) ? "#ff453a" : "#0a84ff"
+                    color: !volRoot.hasSource ? Qt.rgba(1, 1, 1, 0.4) : (volRoot.source.muted ? "#ff453a" : "#0a84ff")
                 }
             }
 
             Slider {
                 id: inSlider
                 Layout.fillWidth: true
+                enabled: volRoot.hasSource
+                opacity: volRoot.hasSource ? 1.0 : 0.4
                 from: 0
                 to: 100
                 value: volRoot.inputPercent

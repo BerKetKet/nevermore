@@ -1,6 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Toggle Raven Sidebar
-Exec=/home/bgg/.local/bin/toggle-raven.sh
-NoDisplay=true
-X-KDE-GlobalAccel-CommandShortcut=true

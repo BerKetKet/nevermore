@@ -25,6 +25,7 @@ Rectangle {
 
     Sensors.SensorDataModel {
         id: sensorModel
+        enabled: hwRoot.visible
         sensors: [
             "cpu/all/usage",
             "memory/physical/usedPercent",
@@ -37,31 +38,26 @@ Rectangle {
             "network/all/upload"
         ]
 
-        onDataChanged: updateMetrics()
-    }
-
-    Timer {
-        interval: 1500
-        running: true
-        repeat: true
-        onTriggered: hwRoot.updateMetrics()
+        onDataChanged: hwRoot.updateMetrics()
     }
 
     function formatBytes(bytes) {
-        if (!bytes || isNaN(bytes)) return "0 GB";
+        if (!bytes || isNaN(bytes)) return i18n("0 GB");
         let gb = bytes / (1024 * 1024 * 1024);
-        return gb.toFixed(1) + " GB";
+        return i18n("%1 GB", gb.toFixed(1));
     }
 
     function formatSpeed(bytesPerSec) {
-        if (!bytesPerSec || isNaN(bytesPerSec) || bytesPerSec <= 0) return "0 KB/s";
+        if (!bytesPerSec || isNaN(bytesPerSec) || bytesPerSec <= 0) return i18n("0 KB/s");
         let mb = bytesPerSec / (1024 * 1024);
-        if (mb >= 1) return mb.toFixed(1) + " MB/s";
+        if (mb >= 1) return i18n("%1 MB/s", mb.toFixed(1));
         let kb = bytesPerSec / 1024;
-        return kb.toFixed(0) + " KB/s";
+        return i18n("%1 KB/s", kb.toFixed(0));
     }
 
     function updateMetrics() {
+        if (!hwRoot.visible) return;
+
         let cpu = sensorModel.data(sensorModel.index(0, 0), Sensors.SensorDataModel.Value);
         if (cpu !== undefined && !isNaN(cpu)) cpuUsage = Math.max(0, Math.min(100, cpu));
 
@@ -88,6 +84,12 @@ Rectangle {
 
         let nu = sensorModel.data(sensorModel.index(0, 8), Sensors.SensorDataModel.Value);
         if (nu !== undefined && !isNaN(nu)) netUp = nu;
+    }
+
+    onVisibleChanged: {
+        if (visible) {
+            updateMetrics();
+        }
     }
 
     Component.onCompleted: updateMetrics()
@@ -139,7 +141,7 @@ Rectangle {
                 }
                 Item { Layout.fillWidth: true }
                 Text {
-                    text: Math.round(hwRoot.cpuUsage) + "%"
+                    text: i18n("%1%", Math.round(hwRoot.cpuUsage))
                     font.family: "SF Hello"
                     font.pixelSize: 12
                     font.bold: true
@@ -150,7 +152,7 @@ Rectangle {
             // CPU Bar
             Rectangle {
                 Layout.fillWidth: true
-                height: 7
+                implicitHeight: 7
                 radius: 4
                 color: Qt.rgba(1, 1, 1, 0.1)
 
@@ -186,7 +188,7 @@ Rectangle {
                 }
                 Item { Layout.fillWidth: true }
                 Text {
-                    text: hwRoot.formatBytes(hwRoot.memUsed) + " / " + hwRoot.formatBytes(hwRoot.memTotal) + " (" + Math.round(hwRoot.memPercent) + "%)"
+                    text: i18n("%1 / %2 (%3%)", hwRoot.formatBytes(hwRoot.memUsed), hwRoot.formatBytes(hwRoot.memTotal), Math.round(hwRoot.memPercent))
                     font.family: "SF Hello"
                     font.pixelSize: 11
                     color: "#bf5af2"
@@ -197,7 +199,7 @@ Rectangle {
             // RAM Bar
             Rectangle {
                 Layout.fillWidth: true
-                height: 7
+                implicitHeight: 7
                 radius: 4
                 color: Qt.rgba(1, 1, 1, 0.1)
 
@@ -225,7 +227,7 @@ Rectangle {
                     color: Qt.rgba(1, 1, 1, 0.7)
                 }
                 Text {
-                    text: i18n("Disk Storage")
+                    text: i18n("Storage (All Disks)")
                     font.family: "SF Hello"
                     font.pixelSize: 12
                     font.bold: true
@@ -233,7 +235,7 @@ Rectangle {
                 }
                 Item { Layout.fillWidth: true }
                 Text {
-                    text: hwRoot.formatBytes(hwRoot.diskFree) + " free (" + Math.round(hwRoot.diskPercent) + "% used)"
+                    text: i18n("%1 free (%2% used)", hwRoot.formatBytes(hwRoot.diskFree), Math.round(hwRoot.diskPercent))
                     font.family: "SF Hello"
                     font.pixelSize: 11
                     color: "#30d158"
@@ -244,7 +246,7 @@ Rectangle {
             // Disk Bar
             Rectangle {
                 Layout.fillWidth: true
-                height: 7
+                implicitHeight: 7
                 radius: 4
                 color: Qt.rgba(1, 1, 1, 0.1)
 
@@ -261,7 +263,7 @@ Rectangle {
         // --- Network Activity ---
         Rectangle {
             Layout.fillWidth: true
-            height: 30
+            implicitHeight: 30
             radius: 8
             color: Qt.rgba(1, 1, 1, 0.05)
 

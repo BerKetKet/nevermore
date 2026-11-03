@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ENTRY="${1:-}"
+APP_NAME="${2:-}"
+
+# Check for missing argument
+if [ -z "$ENTRY" ]; then
+    echo "Error: Missing desktop entry name argument" >&2
+    exit 1
+fi
+
+# Validate desktop entry argument against ^[A-Za-z0-9_.-]+$
+if [[ ! "$ENTRY" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+    echo "Error: Invalid desktop entry name '$ENTRY'. Must match ^[A-Za-z0-9_.-]+\$" >&2
+    exit 2
+fi
+
+RUN_DIR="${XDG_RUNTIME_DIR:-/tmp}/nevermore"
+mkdir -p "$RUN_DIR"
+chmod 0700 "$RUN_DIR"
+
+JS_FILE="$(mktemp "$RUN_DIR/raise-XXXXXX.js")"
+PLUGIN_NAME="nevermore_raise_${$}_${RANDOM}"
+TOKEN="NEVERMORE_MATCH_${$}_${RANDOM}"
+
+# shellcheck disable=SC2317,SC2329
+cleanup() {
+    local rc=$?
+    if [ -n "${PLUGIN_NAME:-}" ]; then
+        qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript "$PLUGIN_NAME" >/dev/null 2>&1 || true
+    fi
+    if [ -n "${JS_FILE:-}" ] && [ -f "$JS_FILE" ]; then
+        rm -f "$JS_FILE"
+    fi
+    exit "$rc"
+}
+trap cleanup EXIT INT TERM
+
+# Safely escape strings for JS string literal
+escape_js() {
+    local str="$1"
+    str="${str//\\/\\\\}"
+    str="${str//\"/\\\"}"
+    str="${str//$'\n'/\\n}"
+    str="${str//$'\r'/\\r}"
+    printf '%s' "$str"
+}
+
+ESC_ENTRY="$(escape_js "$ENTRY")"
+ESC_APP="$(escape_js "$APP_NAME")"
+ESC_TOKEN="$(escape_js "$TOKEN")"
+
+cat > "$JS_FILE" <<EOF
+(function() {
+    let target = "$ESC_ENTRY".toLowerCase();
+    let targetBase = target.endsWith(".desktop") ? target.slice(0, -8) : target;
+    let appName = "$ESC_APP".toLowerCase();
+    let matched = false;
+    let wins = workspace.windowList();
+
+    // 1. Primary match: desktopFileName or resourceClass/resourceName against desktop entry
+    for (let i = 0; i < wins.length; i++) {
+        let w = wins[i];
+        if (!w.normalWindow) continue;
+        let df = (w.desktopFileName || "").toLowerCase();
+        let dfBase = df.endsWith(".desktop") ? df.slice(0, -8) : df;
+        let rc = (w.resourceClass || "").toLowerCase();
+        let rn = (w.resourceName || "").toLowerCase();
+        if (dfBase === targetBase || rc === targetBase || rn === targetBase) {
+            w.minimized = false;
+            workspace.activeWindow = w;
+            matched = true;
+            break;
+        }
+    }
+
+    // 2. Secondary fallback: applicationName against resourceClass/resourceName/desktopFileName (caption-free)
+    if (!matched && appName.length > 0) {
+        for (let i = 0; i < wins.length; i++) {
+            let w = wins[i];
+            if (!w.normalWindow) continue;
+            let rc = (w.resourceClass || "").toLowerCase();
+            let rn = (w.resourceName || "").toLowerCase();
+            let df = (w.desktopFileName || "").toLowerCase();
+            let dfBase = df.endsWith(".desktop") ? df.slice(0, -8) : df;
+            if (rc === appName || rn === appName || dfBase === appName) {
+                w.minimized = false;
+                workspace.activeWindow = w;
+                matched = true;
+                break;
+            }
+        }
+    }
+
+    console.error("$ESC_TOKEN:" + (matched ? "FOUND" : "NOT_FOUND"));
+})();
+EOF
+
+if ! command -v qdbus6 >/dev/null 2>&1; then
+    echo "Error: qdbus6 is required to interact with KWin" >&2
+    exit 4
+fi
+
+sid="$(qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript "$JS_FILE" "$PLUGIN_NAME" 2>/dev/null || true)"
+if [ -z "$sid" ] || [ "$sid" -le 0 ] 2>/dev/null; then
+    echo "Error: Failed to load KWin raise script" >&2
+    exit 4
+fi
+
+qdbus6 org.kde.KWin "/Scripting/Script$sid" org.kde.kwin.Script.run >/dev/null 2>&1 || true
+qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.start >/dev/null 2>&1 || true
+qdbus6 org.kde.KWin "/Scripting/Script$sid" org.kde.kwin.Script.stop >/dev/null 2>&1 || true
+
+status=""
+for _ in {1..20}; do
+    if journalctl --user -u plasma-kwin_wayland -n 30 --no-pager 2>/dev/null | grep -q "$TOKEN:FOUND"; then
+        status="FOUND"
+        break
+    elif journalctl --user -u plasma-kwin_wayland -n 30 --no-pager 2>/dev/null | grep -q "$TOKEN:NOT_FOUND"; then
+        status="NOT_FOUND"
+        break
+    fi
+    sleep 0.05
+done
+
+if [ "$status" = "FOUND" ]; then
+    exit 0
+elif [ "$status" = "NOT_FOUND" ]; then
+    exit 3
+else
+    echo "Error: KWin communication timeout; no response from plasma-kwin_wayland journal" >&2
+    exit 4
+fi

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CMD="${1:-}"
+TARGET_DIR="${2:-$HOME}"
+
+if [ -z "$CMD" ]; then
+    echo "Usage: nevermore-run <command> [working_directory]" >&2
+    exit 1
+fi
+
+if [ ! -d "$TARGET_DIR" ]; then
+    TARGET_DIR="$HOME"
+fi
+
+UNIT_NAME="nevermore-task-$(date +%s%N | cut -b1-13)"
+
+echo "=== Nevermore Background Task Launcher ==="
+echo "Unit: $UNIT_NAME.service"
+echo "Command: $CMD"
+echo "Directory: $TARGET_DIR"
+
+if systemd-run --user --unit="$UNIT_NAME" --remain-after-exit --working-directory="$TARGET_DIR" bash -c "$CMD"; then
+    echo "✓ Task successfully launched as $UNIT_NAME.service"
+    exit 0
+else
+    echo "✗ Failed to launch background unit via systemd-run" >&2
+    exit 1
+fi
