@@ -16,24 +16,60 @@ Item {
     readonly property int notifCount: notifModel ? notifModel.count : 0
     readonly property bool isDnd: NM.Server.inhibited
 
-    // Optional fallback: KWin script executor to raise application windows by desktopEntry
+    property var activeCardHints: ({})
+
+    // KWin script executor to raise application windows by desktopEntry via scripts/nevermore-raise
     Plasma5Support.DataSource {
         id: kwinActivator
         engine: "executable"
         connectedSources: []
         onNewData: (source, data) => {
             disconnectSource(source);
+            let exitCode = data["exit code"] ?? -1;
+            if (exitCode === 0) {
+                // Window was found and raised -> collapse Nevermore popup
+                notifRoot.actionInvoked();
+            } else {
+                // No window found (exit 3 or other) -> leave popup open and show brief visual hint
+                let notifId = source.split("__notif_id_")[1];
+                if (notifId !== undefined) {
+                    let hints = Object.assign({}, notifRoot.activeCardHints);
+                    hints[notifId] = i18n("No open window found");
+                    notifRoot.activeCardHints = hints;
+                    hintClearTimer.restart();
+                }
+            }
         }
     }
 
-    function raiseApp(desktopEntry, appName) {
-        let target = (desktopEntry || appName || "").trim();
-        if (!target) return;
-        target = target.replace(/[^a-zA-Z0-9_\-\.]/g, "");
-        if (!target) return;
-        let pyScript = "import subprocess; js = '''let wins = workspace.windowList(); for (let w of wins) { let d = w.desktopFileName || ''; let r = w.resourceClass || ''; if (d.indexOf(\\\"" + target + "\\\") !== -1 || r.indexOf(\\\"" + target + "\\\") !== -1) { workspace.activeWindow = w; break; } }'''; f = open('/tmp/kwin_act.js', 'w'); f.write(js); f.close(); sid = subprocess.check_output(['qdbus6', 'org.kde.KWin', '/Scripting', 'org.kde.kwin.Scripting.loadScript', '/tmp/kwin_act.js']).decode().strip(); subprocess.run(['qdbus6', 'org.kde.KWin', f'/Scripting/Script{sid}', 'org.kde.kwin.Script.run']); subprocess.run(['qdbus6', 'org.kde.KWin', f'/Scripting/Script{sid}', 'org.kde.kwin.Script.stop']);";
-        kwinActivator.connectSource("python3 -c \"" + pyScript + "\"");
-        notifRoot.actionInvoked();
+    Timer {
+        id: hintClearTimer
+        interval: 2500
+        repeat: false
+        onTriggered: notifRoot.activeCardHints = ({})
+    }
+
+    function raiseApp(desktopEntry, appName, notificationId) {
+        let entry = (desktopEntry || "").trim();
+        if (!entry && appName) {
+            let candidate = appName.trim().toLowerCase().replace(/\s+/g, "-");
+            if (/^[A-Za-z0-9_.-]+$/.test(candidate)) {
+                entry = candidate;
+            }
+        }
+        if (!entry || !/^[A-Za-z0-9_.-]+$/.test(entry)) {
+            let hints = Object.assign({}, notifRoot.activeCardHints);
+            hints[notificationId] = i18n("No window association");
+            notifRoot.activeCardHints = hints;
+            hintClearTimer.restart();
+            return;
+        }
+
+        let safeApp = (appName || "").replace(/["\\`$]/g, "");
+        let helperPath = "~/.local/bin/nevermore-raise";
+        let cmd = helperPath + " \"" + entry + "\" \"" + safeApp + "\"";
+        let taggedSource = cmd + " ; # __notif_id_" + notificationId;
+        kwinActivator.connectSource(taggedSource);
     }
 
     ColumnLayout {
@@ -187,11 +223,13 @@ Item {
                     width: notifList.width
                     implicitHeight: notifCol.implicitHeight + 20
                     radius: 12
+                    readonly property string notifId: (model.id !== undefined ? model.id : index).toString()
+                    readonly property string cardHint: notifRoot.activeCardHints[notifId] || ""
                     readonly property bool hasAction: model.hasDefaultAction === true
                     readonly property bool canRaiseApp: !hasAction && ((model.desktopEntry && model.desktopEntry !== "") || (model.applicationName && model.applicationName !== ""))
                     readonly property bool isInteractive: hasAction || canRaiseApp
                     color: (isInteractive && cardMouse.containsMouse) ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.05)
-                    border.color: (isInteractive && cardMouse.containsMouse) ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.08)
+                    border.color: cardHint !== "" ? Qt.rgba(255/255, 149/255, 0, 0.5) : ((isInteractive && cardMouse.containsMouse) ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.08))
                     border.width: 1
 
                     MouseArea {
@@ -206,7 +244,7 @@ Item {
                                 notifRoot.notifModel.invokeDefaultAction(notifRoot.notifModel.index(index, 0), NM.Notifications.Close);
                                 notifRoot.actionInvoked();
                             } else if (notifItem.canRaiseApp) {
-                                notifRoot.raiseApp(model.desktopEntry, model.applicationName);
+                                notifRoot.raiseApp(model.desktopEntry, model.applicationName, notifItem.notifId);
                             }
                         }
                     }
@@ -230,11 +268,12 @@ Item {
                             }
 
                             Text {
-                                text: model.applicationName || i18n("System")
+                                text: notifItem.cardHint !== "" ? notifItem.cardHint : (model.applicationName || i18n("System"))
                                 font.family: "SF Hello"
                                 font.pixelSize: 12
-                                font.bold: true
-                                color: "#0a84ff"
+                                font.bold: notifItem.cardHint === ""
+                                font.italic: notifItem.cardHint !== ""
+                                color: notifItem.cardHint !== "" ? "#ff9f0a" : "#0a84ff"
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                             }

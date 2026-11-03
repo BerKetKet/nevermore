@@ -91,6 +91,10 @@ install_runner() {
     cp "$REPO_DIR/scripts/nevermore-run" "$BIN_DIR/nevermore-run"
     chmod +x "$BIN_DIR/nevermore-run"
     echo "✓ Installed runner helper to $BIN_DIR/nevermore-run"
+
+    cp "$REPO_DIR/scripts/nevermore-raise" "$BIN_DIR/nevermore-raise"
+    chmod +x "$BIN_DIR/nevermore-raise"
+    echo "✓ Installed window raise helper to $BIN_DIR/nevermore-raise"
 }
 
 restart_plasmashell() {
@@ -112,6 +116,11 @@ case "$MODE" in
         if [ -f "$BIN_DIR/nevermore-run" ] || [ -L "$BIN_DIR/nevermore-run" ]; then
             rm -f "$BIN_DIR/nevermore-run"
             echo "✓ Removed $BIN_DIR/nevermore-run"
+        fi
+
+        if [ -f "$BIN_DIR/nevermore-raise" ] || [ -L "$BIN_DIR/nevermore-raise" ]; then
+            rm -f "$BIN_DIR/nevermore-raise"
+            echo "✓ Removed $BIN_DIR/nevermore-raise"
         fi
 
         # Safely remove plasmoid without following symlinks into source repo
