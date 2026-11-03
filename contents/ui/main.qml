@@ -18,6 +18,23 @@ PlasmoidItem {
     }
 
     property int activeTab: 0 // 0: Widgets, 1: Notifications, 2: Run
+    property string currentDateString: Qt.formatDate(new Date(), "dddd, MMMM d")
+
+    function updateCurrentDate() {
+        currentDateString = Qt.formatDate(new Date(), "dddd, MMMM d");
+    }
+
+    onVisibleChanged: {
+        if (visible) updateCurrentDate();
+    }
+
+    Timer {
+        id: dateRolloverTimer
+        interval: 60000
+        repeat: true
+        running: true
+        onTriggered: root.updateCurrentDate()
+    }
 
     fullRepresentation: Rectangle {
         id: controlCenterPanel
@@ -59,7 +76,7 @@ PlasmoidItem {
                         color: "#ffffff"
                     }
                     Text {
-                        text: Qt.formatDate(new Date(), "dddd, MMMM d")
+                        text: root.currentDateString
                         font.family: "SF Hello"
                         font.pixelSize: 11
                         color: Qt.rgba(1, 1, 1, 0.5)

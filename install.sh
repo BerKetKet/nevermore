@@ -37,6 +37,31 @@ except Exception:
     pass
 ' 2>/dev/null || true
     fi
+
+    # Migrate any live panel widget referencing legacy plugin ID to Nevermore
+    local qdbus_tool=""
+    if command -v qdbus6 >/dev/null 2>&1; then
+        qdbus_tool="qdbus6"
+    elif command -v qdbus >/dev/null 2>&1; then
+        qdbus_tool="qdbus"
+    fi
+
+    if [ -n "$qdbus_tool" ]; then
+        "$qdbus_tool" org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript '
+        for (let pid of panelIds) {
+            let p = panelById(pid);
+            if (!p) continue;
+            for (let wid of p.widgetIds) {
+                let w = p.widgetById(wid);
+                if (w && w.type === "org.kde.plasma.budgie.raven") {
+                    w.remove();
+                    p.addWidget("io.github.berketket.nevermore");
+                    print("Migrated panel " + pid + " widget from legacy plugin to io.github.berketket.nevermore");
+                }
+            }
+        }
+        ' 2>/dev/null || true
+    fi
 }
 
 install_helper_files() {
