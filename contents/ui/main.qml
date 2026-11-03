@@ -2,19 +2,15 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import org.kde.plasma.plasmoid
-import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
 import org.kde.notificationmanager as NM
 
 PlasmoidItem {
     id: root
 
-    // Inside vertical/side panels (Panel 412), adapt to full rich representation directly.
-    // In horizontal panels (Panel 378 top bar), use compact icon trigger that opens a zero-strut popup dialog.
-    preferredRepresentation: (Plasmoid.formFactor === PlasmaCore.Types.Vertical || Plasmoid.location === PlasmaCore.Types.RightEdge || Plasmoid.location === PlasmaCore.Types.LeftEdge) ? fullRepresentation : compactRepresentation
-
-    // Request keyboard interactivity on Wayland when Run tab or popup is active
-    Plasmoid.status: (root.activeTab === 2 || root.expanded) ? PlasmaCore.Types.AcceptingInputStatus : PlasmaCore.Types.PassiveStatus
+    // Single-surface architecture: Always render compact trigger in the panel,
+    // and display the complete control center strictly within the zero-strut popup dialog.
+    preferredRepresentation: compactRepresentation
 
     // Enable native toggle behavior on shortcut activation
     activationTogglesExpanded: true
@@ -22,29 +18,44 @@ PlasmoidItem {
     // Prevent immediate close on deactivation so toggle control center overlay stays open while active
     hideOnWindowDeactivate: false
 
-    Connections {
-        target: Plasmoid
-        function onActivated() {
-            if (!root.activationTogglesExpanded) {
-                root.expanded = !root.expanded;
-            }
-        }
-    }
-
     compactRepresentation: MouseArea {
         id: compactRoot
+        Layout.fillWidth: true
+        Layout.fillHeight: true
         implicitWidth: Kirigami.Units.gridUnit * 2
         implicitHeight: Kirigami.Units.gridUnit * 2
         hoverEnabled: true
 
-        Kirigami.Icon {
-            anchors.centerIn: parent
-            implicitWidth: Kirigami.Units.iconSizes.smallMedium
-            implicitHeight: Kirigami.Units.iconSizes.smallMedium
-            source: "sidebar-expand-right"
+        Timer {
+            id: hoverExpandTimer
+            interval: 150
+            repeat: false
+            onTriggered: {
+                if (compactRoot.containsMouse && !root.expanded) {
+                    root.expanded = true;
+                }
+            }
         }
 
-        onClicked: root.expanded = !root.expanded
+        onEntered: hoverExpandTimer.restart()
+        onExited: hoverExpandTimer.stop()
+        onClicked: {
+            hoverExpandTimer.stop();
+            root.expanded = !root.expanded;
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            radius: 4
+            color: compactRoot.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : "transparent"
+
+            Kirigami.Icon {
+                anchors.centerIn: parent
+                implicitWidth: Kirigami.Units.iconSizes.smallMedium
+                implicitHeight: Kirigami.Units.iconSizes.smallMedium
+                source: "sidebar-expand-right"
+            }
+        }
     }
 
     NM.Notifications {
@@ -78,7 +89,8 @@ PlasmoidItem {
         Layout.preferredWidth: 380
         Layout.maximumWidth: 420
         Layout.minimumHeight: 600
-        Layout.preferredHeight: 750
+        Layout.preferredHeight: Screen.desktopAvailableHeight > 100 ? Math.max(750, Screen.desktopAvailableHeight - 24) : 980
+        Layout.maximumHeight: Screen.desktopAvailableHeight > 100 ? Screen.desktopAvailableHeight : 1050
         Layout.fillHeight: true
 
         color: "#18181b"
