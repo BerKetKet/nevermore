@@ -9,6 +9,8 @@ APP_DIR="$HOME/.local/share/applications"
 
 MODE="install"
 RESTART_SHELL=false
+AUTOSTART_TERMINAL=false
+KROHNKITE_RULE=false
 
 for arg in "$@"; do
     case "$arg" in
@@ -24,13 +26,19 @@ for arg in "$@"; do
         --restart-shell)
             RESTART_SHELL=true
             ;;
+        --autostart-terminal)
+            AUTOSTART_TERMINAL=true
+            ;;
+        --krohnkite-rule)
+            KROHNKITE_RULE=true
+            ;;
         -h|--help)
-            echo "Usage: $0 [--install | --dev | --uninstall] [--restart-shell]"
+            echo "Usage: $0 [--install | --dev | --uninstall] [--restart-shell] [--autostart-terminal] [--krohnkite-rule]"
             exit 0
             ;;
         *)
             echo "Unknown option: $arg" >&2
-            echo "Usage: $0 [--install | --dev | --uninstall] [--restart-shell]" >&2
+            echo "Usage: $0 [--install | --dev | --uninstall] [--restart-shell] [--autostart-terminal] [--krohnkite-rule]" >&2
             exit 1
             ;;
     esac
@@ -86,7 +94,78 @@ except Exception:
     fi
 }
 
-install_runner() {
+apply_kwin_window_rules() {
+    local rules_file="$HOME/.config/kwinrulesrc"
+    if [ -f "$rules_file" ]; then
+        if ! grep -q "nevermore-terminal-rule" "$rules_file"; then
+            cat >> "$rules_file" <<'EOF'
+
+[nevermore-terminal-rule]
+Description=Nevermore Managed Terminal
+above=true
+aboverule=3
+noborder=true
+noborderrule=3
+skippager=true
+skippagerrule=3
+skipswitcher=true
+skipswitcherrule=3
+skiptaskbar=true
+skiptaskbarrule=3
+types=16
+typesrule=3
+wmclass=io.github.berketket.nevermore.terminal
+wmclasscomplete=true
+wmclassmatch=1
+EOF
+            sed -i '/^Order=/ s/$/,nevermore-terminal-rule/' "$rules_file"
+            echo "✓ Added KWin window rule for Nevermore terminal"
+        fi
+    fi
+
+    local kwinrc="$HOME/.config/kwinrc"
+    if [ -f "$kwinrc" ]; then
+        if grep -q "\[Script-krohnkite\]" "$kwinrc"; then
+            if ! grep -q "io.github.berketket.nevermore.terminal" "$kwinrc"; then
+                sed -i '/^\[Script-krohnkite\]/a ignoreClass=io.github.berketket.nevermore.terminal' "$kwinrc"
+                echo "✓ Added ignoreClass to Krohnkite configuration"
+            fi
+        fi
+    fi
+
+    if command -v qdbus6 >/dev/null 2>&1; then
+        qdbus6 org.kde.KWin /KWin org.kde.KWin.reconfigure >/dev/null 2>&1 || true
+    fi
+}
+
+remove_kwin_window_rules() {
+    local rules_file="$HOME/.config/kwinrulesrc"
+    if [ -f "$rules_file" ]; then
+        sed -i 's/,nevermore-terminal-rule//g' "$rules_file"
+        sed -i 's/nevermore-terminal-rule,//g' "$rules_file"
+        python3 -c '
+import configparser
+path = "'"$rules_file"'"
+cp = configparser.ConfigParser()
+cp.read(path)
+if cp.has_section("nevermore-terminal-rule"):
+    cp.remove_section("nevermore-terminal-rule")
+    with open(path, "w") as f:
+        cp.write(f, space_around_delimiters=False)
+' 2>/dev/null || true
+    fi
+
+    local kwinrc="$HOME/.config/kwinrc"
+    if [ -f "$kwinrc" ]; then
+        sed -i '/ignoreClass=io\.github\.berketket\.nevermore\.terminal/d' "$kwinrc"
+    fi
+
+    if command -v qdbus6 >/dev/null 2>&1; then
+        qdbus6 org.kde.KWin /KWin org.kde.KWin.reconfigure >/dev/null 2>&1 || true
+    fi
+}
+
+install_helpers() {
     mkdir -p "$BIN_DIR"
     cp "$REPO_DIR/scripts/nevermore-run" "$BIN_DIR/nevermore-run"
     chmod +x "$BIN_DIR/nevermore-run"
@@ -95,6 +174,40 @@ install_runner() {
     cp "$REPO_DIR/scripts/nevermore-raise" "$BIN_DIR/nevermore-raise"
     chmod +x "$BIN_DIR/nevermore-raise"
     echo "✓ Installed window raise helper to $BIN_DIR/nevermore-raise"
+
+    cp "$REPO_DIR/scripts/nevermore-term" "$BIN_DIR/nevermore-term"
+    chmod +x "$BIN_DIR/nevermore-term"
+    echo "✓ Installed terminal helper to $BIN_DIR/nevermore-term"
+
+    local prof_dir="$HOME/.local/share/konsole"
+    mkdir -p "$prof_dir"
+    cp "$REPO_DIR/profiles/Nevermore.profile" "$prof_dir/Nevermore.profile"
+    echo "✓ Installed Konsole profile to $prof_dir/Nevermore.profile"
+
+    mkdir -p "$APP_DIR"
+    cp "$REPO_DIR/contents/desktop/io.github.berketket.nevermore.terminal.desktop" "$APP_DIR/io.github.berketket.nevermore.terminal.desktop"
+    echo "✓ Installed desktop entry to $APP_DIR/io.github.berketket.nevermore.terminal.desktop"
+
+    if [ "$AUTOSTART_TERMINAL" = true ]; then
+        local autostart_dir="$HOME/.config/autostart"
+        mkdir -p "$autostart_dir"
+        cat > "$autostart_dir/nevermore-terminal.desktop" <<'EOF'
+[Desktop Entry]
+Name=Nevermore Terminal (Autostart)
+Comment=Autostart Nevermore managed terminal minimized
+Exec=nevermore-term start-minimized
+Icon=utilities-terminal
+Type=Application
+Terminal=false
+Categories=System;TerminalEmulator;
+X-GNOME-Autostart-enabled=true
+EOF
+        echo "✓ Configured autostart entry: $autostart_dir/nevermore-terminal.desktop"
+    fi
+
+    if [ "$KROHNKITE_RULE" = true ]; then
+        apply_kwin_window_rules
+    fi
 }
 
 restart_plasmashell() {
@@ -112,6 +225,7 @@ case "$MODE" in
     uninstall)
         echo "=== Uninstalling Nevermore Control Center ==="
         purge_legacy
+        remove_kwin_window_rules
 
         if [ -f "$BIN_DIR/nevermore-run" ] || [ -L "$BIN_DIR/nevermore-run" ]; then
             rm -f "$BIN_DIR/nevermore-run"
@@ -121,6 +235,21 @@ case "$MODE" in
         if [ -f "$BIN_DIR/nevermore-raise" ] || [ -L "$BIN_DIR/nevermore-raise" ]; then
             rm -f "$BIN_DIR/nevermore-raise"
             echo "✓ Removed $BIN_DIR/nevermore-raise"
+        fi
+
+        if [ -f "$BIN_DIR/nevermore-term" ] || [ -L "$BIN_DIR/nevermore-term" ]; then
+            rm -f "$BIN_DIR/nevermore-term"
+            echo "✓ Removed $BIN_DIR/nevermore-term"
+        fi
+
+        if [ -f "$APP_DIR/io.github.berketket.nevermore.terminal.desktop" ] || [ -L "$APP_DIR/io.github.berketket.nevermore.terminal.desktop" ]; then
+            rm -f "$APP_DIR/io.github.berketket.nevermore.terminal.desktop"
+            echo "✓ Removed $APP_DIR/io.github.berketket.nevermore.terminal.desktop"
+        fi
+
+        if [ -f "$HOME/.config/autostart/nevermore-terminal.desktop" ] || [ -L "$HOME/.config/autostart/nevermore-terminal.desktop" ]; then
+            rm -f "$HOME/.config/autostart/nevermore-terminal.desktop"
+            echo "✓ Removed $HOME/.config/autostart/nevermore-terminal.desktop"
         fi
 
         # Safely remove plasmoid without following symlinks into source repo
@@ -151,7 +280,7 @@ case "$MODE" in
     dev)
         echo "=== Setting Up Nevermore in Developer (Symlink) Mode ==="
         purge_legacy
-        install_runner
+        install_helpers
 
         mkdir -p "$(dirname "$PLASMOID_DIR")"
 
@@ -184,7 +313,7 @@ case "$MODE" in
     install)
         echo "=== Installing Nevermore Control Center ==="
         purge_legacy
-        install_runner
+        install_helpers
 
         # If a symlink exists from dev mode, clear it safely
         if [ -L "$PLASMOID_DIR" ]; then

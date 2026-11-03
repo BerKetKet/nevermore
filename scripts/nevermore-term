@@ -1,0 +1,310 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SUBCOMMAND="${1:-toggle}"
+
+case "$SUBCOMMAND" in
+    toggle|show|hide|status|start-minimized)
+        ;;
+    -h|--help|help)
+        echo "Usage: nevermore-term [toggle|show|hide|status|start-minimized]"
+        exit 0
+        ;;
+    *)
+        echo "Error: Unknown subcommand '$SUBCOMMAND'. Expected toggle, show, hide, status, or start-minimized." >&2
+        exit 1
+        ;;
+esac
+
+RUN_DIR="${XDG_RUNTIME_DIR:-/tmp}/nevermore"
+mkdir -p "$RUN_DIR"
+chmod 0700 "$RUN_DIR"
+
+LOCK_FILE="$RUN_DIR/terminal.lock"
+exec 200>"$LOCK_FILE"
+if ! flock -x -w 5 200; then
+    echo "Error: Could not acquire lock $LOCK_FILE" >&2
+    exit 1
+fi
+
+PID_FILE="$RUN_DIR/terminal.pid"
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/nevermore/terminal.conf"
+
+# Default terminal emulator and arguments
+DEFAULT_EMULATOR="konsole"
+DEFAULT_ARGS=(--separate --desktopfile io.github.berketket.nevermore.terminal --profile Nevermore --hide-menubar --hide-tabbar)
+
+EMULATOR="$DEFAULT_EMULATOR"
+EMULATOR_ARGS=("${DEFAULT_ARGS[@]}")
+
+# Load optional user configuration
+if [[ -f "$CONFIG_FILE" ]]; then
+    # shellcheck source=/dev/null
+    source "$CONFIG_FILE"
+    if [[ -n "${TERMINAL_COMMAND:-}" ]]; then
+        # Parse TERMINAL_COMMAND string into array
+        read -r -a PARSED_CMD <<< "$TERMINAL_COMMAND"
+        EMULATOR="${PARSED_CMD[0]}"
+        if [ "${#PARSED_CMD[@]}" -gt 1 ]; then
+            EMULATOR_ARGS=("${PARSED_CMD[@]:1}")
+        else
+            EMULATOR_ARGS=()
+        fi
+    fi
+fi
+
+# Ensure emulator exists in PATH
+validate_emulator() {
+    if ! command -v "$EMULATOR" >/dev/null 2>&1; then
+        if [[ -f "$CONFIG_FILE" ]]; then
+            echo "Error: Terminal emulator '$EMULATOR' specified in $CONFIG_FILE not found in PATH" >&2
+        else
+            echo "Error: Default terminal emulator '$EMULATOR' not found in PATH" >&2
+        fi
+        exit 2
+    fi
+}
+
+# Ensure Konsole profile exists if using default profile
+ensure_konsole_profile() {
+    local prof_dir="${XDG_DATA_HOME:-$HOME/.local/share}/konsole"
+    local prof_file="$prof_dir/Nevermore.profile"
+    if [[ "$EMULATOR" == "konsole" ]] && [[ ! -f "$prof_file" ]]; then
+        mkdir -p "$prof_dir"
+        cat > "$prof_file" <<'EOF'
+[Appearance]
+ColorScheme=ArcDark
+Font=Hack Nerd Font,11,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0
+
+[General]
+Name=Nevermore
+Parent=FALLBACK/
+LocalTabTitleFormat=Nevermore
+RemoteTabTitleFormat=Nevermore
+ShowTerminalSizeHint=false
+TerminalMargin=4
+
+[Scrolling]
+HistoryMode=2
+ScrollBarPosition=2
+EOF
+    fi
+}
+
+PID=""
+if [[ -f "$PID_FILE" ]]; then
+    CANDIDATE="$(cat "$PID_FILE" 2>/dev/null || true)"
+    if [[ -n "$CANDIDATE" ]] && kill -0 "$CANDIDATE" 2>/dev/null; then
+        PID="$CANDIDATE"
+    else
+        rm -f "$PID_FILE"
+    fi
+fi
+
+# Function to run KWin placement / toggle script
+run_kwin_script() {
+    local target_pid="$1"
+    local action="$2"
+
+    local js_file
+    js_file="$(mktemp "$RUN_DIR/term-kwin-XXXXXX.js")"
+    local plugin_name="nevermore_term_${$}_${RANDOM}"
+    local token="NEVERMORE_TERM_${$}_${RANDOM}"
+
+    cleanup_kwin() {
+        qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript "$plugin_name" >/dev/null 2>&1 || true
+        rm -f "$js_file"
+    }
+
+    cat > "$js_file" <<EOF
+(function() {
+    let targetPid = $target_pid;
+    let action = "$action";
+    let wins = workspace.windowList();
+    let target = null;
+
+    for (let i = 0; i < wins.length; i++) {
+        let w = wins[i];
+        if (w.pid === targetPid) {
+            target = w;
+            break;
+        }
+    }
+
+    if (!target) {
+        console.error("$token:NOT_FOUND");
+        return;
+    }
+
+    let isActive = (workspace.activeWindow === target);
+    let isMin = target.minimized;
+
+    if (action === "hide" || (action === "toggle" && isActive && !isMin)) {
+        let area = workspace.clientArea(KWin.PlacementArea, target);
+        let rect = area;
+        rect.x = area.x + area.width - 397;
+        rect.y = area.y;
+        rect.width = 397;
+        rect.height = area.height;
+        target.frameGeometry = rect;
+        target.keepAbove = true;
+        target.skipTaskbar = true;
+        target.skipPager = true;
+        target.skipSwitcher = true;
+        target.noBorder = true;
+        target.tile = null;
+        target.minimized = true;
+        console.error("$token:HIDDEN");
+    } else if (action === "show" || (action === "toggle" && (!isActive || isMin))) {
+        let area = workspace.clientArea(KWin.PlacementArea, target);
+        let rect = area;
+        rect.x = area.x + area.width - 397;
+        rect.y = area.y;
+        rect.width = 397;
+        rect.height = area.height;
+        target.frameGeometry = rect;
+        target.keepAbove = true;
+        target.skipTaskbar = true;
+        target.skipPager = true;
+        target.skipSwitcher = true;
+        target.noBorder = true;
+        target.tile = null;
+        target.minimized = false;
+        workspace.activeWindow = target;
+        console.error("$token:SHOWN:" + target.x + "," + target.y + "," + target.width + "," + target.height);
+    } else if (action === "status") {
+        let geom = target.x + "," + target.y + " " + target.width + "x" + target.height;
+        let vis = isMin ? "minimized" : (isActive ? "active" : "visible");
+        console.error("$token:STATUS:" + vis + ":" + geom);
+    }
+})();
+EOF
+
+    local sid
+    sid="$(qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript "$js_file" "$plugin_name" 2>/dev/null || true)"
+    if [ -z "$sid" ] || [ "$sid" -le 0 ] 2>/dev/null; then
+        cleanup_kwin
+        echo "Error: Failed to load KWin term script" >&2
+        return 4
+    fi
+
+    qdbus6 org.kde.KWin "/Scripting/Script$sid" org.kde.kwin.Script.run >/dev/null 2>&1 || true
+    qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.start >/dev/null 2>&1 || true
+    qdbus6 org.kde.KWin "/Scripting/Script$sid" org.kde.kwin.Script.stop >/dev/null 2>&1 || true
+
+    local result=""
+    for _ in {1..20}; do
+        local line
+        line="$(journalctl --user -u plasma-kwin_wayland -n 30 --no-pager 2>/dev/null | grep "$token:" | tail -n 1 || true)"
+        if [[ -n "$line" ]]; then
+            result="${line#*"$token:"}"
+            break
+        fi
+        sleep 0.05
+    done
+
+    cleanup_kwin
+    printf '%s' "$result"
+}
+
+# Handle status subcommand
+if [[ "$SUBCOMMAND" == "status" ]]; then
+    if [[ -z "$PID" ]]; then
+        echo "status: stopped"
+        exit 0
+    fi
+    res="$(run_kwin_script "$PID" "status")"
+    if [[ "$res" =~ ^STATUS:([^:]+):(.*)$ ]]; then
+        vis="${BASH_REMATCH[1]}"
+        geom="${BASH_REMATCH[2]}"
+        echo "status: running"
+        echo "visibility: $vis"
+        echo "pid: $PID"
+        echo "geometry: $geom"
+        exit 0
+    elif [[ "$res" == "NOT_FOUND" ]]; then
+        echo "status: running"
+        echo "visibility: unmapped"
+        echo "pid: $PID"
+        exit 0
+    else
+        # Fallback if journald was slow
+        echo "status: running"
+        echo "pid: $PID"
+        exit 0
+    fi
+fi
+
+# Handle hide subcommand
+if [[ "$SUBCOMMAND" == "hide" ]]; then
+    if [[ -z "$PID" ]]; then
+        exit 0
+    fi
+    run_kwin_script "$PID" "hide" >/dev/null 2>&1 || true
+    exit 0
+fi
+
+# Handle start-minimized subcommand
+if [[ "$SUBCOMMAND" == "start-minimized" ]]; then
+    if [[ -n "$PID" ]]; then
+        run_kwin_script "$PID" "hide" >/dev/null 2>&1 || true
+        exit 0
+    fi
+    validate_emulator
+    ensure_konsole_profile
+    "$EMULATOR" "${EMULATOR_ARGS[@]}" 200>&- >/dev/null 2>&1 &
+    PID=$!
+    echo "$PID" > "$PID_FILE"
+    for _ in {1..30}; do
+        res="$(run_kwin_script "$PID" "hide")"
+        if [[ "$res" =~ ^HIDDEN ]]; then
+            break
+        fi
+        sleep 0.05
+    done
+    exit 0
+fi
+
+# Handle show or toggle subcommand
+if [[ -z "$PID" ]]; then
+    validate_emulator
+    ensure_konsole_profile
+    "$EMULATOR" "${EMULATOR_ARGS[@]}" 200>&- >/dev/null 2>&1 &
+    PID=$!
+    echo "$PID" > "$PID_FILE"
+
+    # Wait for window to register with KWin
+    window_ready=false
+    for _ in {1..30}; do
+        res="$(run_kwin_script "$PID" "show")"
+        if [[ "$res" =~ ^SHOWN: ]]; then
+            window_ready=true
+            break
+        fi
+        sleep 0.05
+    done
+    if [ "$window_ready" = false ]; then
+        echo "Warning: Terminal spawned with PID $PID but window placement confirmation timed out" >&2
+    fi
+    exit 0
+fi
+
+# If process is already running:
+res="$(run_kwin_script "$PID" "$SUBCOMMAND")"
+if [[ "$res" == "NOT_FOUND" ]]; then
+    # Window destroyed or stale PID - restart process
+    kill "$PID" 2>/dev/null || true
+    rm -f "$PID_FILE"
+    validate_emulator
+    ensure_konsole_profile
+    "$EMULATOR" "${EMULATOR_ARGS[@]}" 200>&- >/dev/null 2>&1 &
+    PID=$!
+    echo "$PID" > "$PID_FILE"
+    for _ in {1..30}; do
+        res="$(run_kwin_script "$PID" "show")"
+        if [[ "$res" =~ ^SHOWN: ]]; then
+            break
+        fi
+        sleep 0.05
+    done
+fi
