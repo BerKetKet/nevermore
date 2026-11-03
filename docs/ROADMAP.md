@@ -6,46 +6,39 @@ This document outlines the structured development phases and architectural roadm
 
 ## Phases
 
-### Phase 0: Identity and Hygiene (Current)
+### Phase 0: Identity and Hygiene
 - Establish canonical identity: `io.github.berketket.nevermore` (Version 0.1.0, GPL-3.0-or-later).
-- Align minimum Plasma version (Plasma 6.0) and clean up obsolete Plasma 5 metadata keys (`ServiceTypes`, `X-Plasma-NotificationArea`, `X-Plasma-Provides`).
-- Refactor helper scripts (`toggle-nevermore.sh`) with robust `qdbus6`/`qdbus` detection.
+- Align minimum Plasma version (Plasma 6.0) and clean up obsolete Plasma 5 metadata keys.
 - Overhaul `install.sh` supporting package installation (`kpackagetool6`), developer symlinking (`--dev`), and uninstallation (`--uninstall`).
-- Honest README audit and documentation of manual shortcut registration.
-- Continuous Integration via GitHub Actions running `shellcheck` and `qmllint` (syntax, scoping, and structural verification without module type resolution).
+- Continuous Integration via GitHub Actions running `shellcheck` and `qmllint`.
 
 ### Phase 1: Correctness Fixes
-- Correct `Qt.rgba` calls to ensure channel values remain strictly within the standard `[0.0, 1.0]` range.
-- Audio volume widget cleanup: remove artificial fallback values (60, 80, 50) and gracefully disable controls when no sink/source device is present.
-- Hardware telemetry optimization: eliminate redundant polling timers, pause telemetry updates when the tab/plasmoid is hidden, and honestly label aggregate disk metrics.
-- Notification model unification: deduplicate `NM.Notifications` to a single shared instance, enforce explicit `textFormat` (StyledText for body, PlainText for summary), and use documented API flags instead of magic numbers.
-- Media controls cleanup: replace fragile child indexing (`parent.children[0].status`) with direct ID references.
-- Internationalization compliance: replace string concatenation in `i18n()` with parameterized placeholders (`%1`).
-- Audit `CalendarWidget.qml` and `WidgetsTab.qml` for data hygiene and styling consistency.
+- Correct `Qt.rgba` channel scaling to `[0.0, 1.0]`.
+- Audio volume widget cleanup: remove artificial fallbacks and handle device absence gracefully.
+- Hardware telemetry optimization: pause telemetry updates when tab/plasmoid is hidden.
+- Notification model unification: deduplicate `NM.Notifications` to single shared instance.
+- Media controls cleanup: direct ID references replacing child indexing.
 
-### Phase 2: Quick Run Tab
-- Transition from simulated terminal to an honest, robust one-shot command runner (Quick Run).
-- Create `scripts/nevermore-run` helper with base64-encoded parameter passing, sentinel output tokens, and process isolation.
-- Capture real process exit codes with color-coded success/failure indicators.
-- Reliable process termination using process group killing (`setsid` and `kill -- -PID`).
-- Timeout handling with visual warning and shortcut to launch command in detached Konsole.
-- Detached terminal launch button (`Open in Konsole`).
-- Clipboard paste helper (`wl-paste`) with multiline safety confirmation before execution.
-- Runtime working directory resolution and monotonic tab identification.
-- Long-running background task launcher (`systemd-run --user`).
+### Phase 2: Command Runner & Notifications Hardening
+- Implement transient systemd background task launcher (`systemd-run --user`).
+- Tasks inspection with JSON listing and journalctl log retrieval.
+- Notification click-through handling with default action execution.
+- Window raising fallback via `nevermore-raise` for notifications without actions.
 
 ### Phase 2e: Single Instance, Single Surface Architecture
-- Eliminate dual-instance split: exactly one plasmoid instance resides on the desktop, placed in the right autohide panel.
-- Pure popup architecture: unconditionally set `preferredRepresentation: compactRepresentation`, forcing the entire control center to render exclusively within Plasma's native floating dialog (`PlasmaQuick::Dialog`, `expanded` state).
-- Completely eliminate Wayland layer-shell keyboard interactivity hacks (`AcceptingInputStatus`) and location-based representation branching.
-- Compact trigger interaction: edge hover reveals the autohide panel, hovering the compact icon for ~150ms expands the popup dialog, with click toggle as fallback.
-- Native shortcut toggle: `activationTogglesExpanded: true` natively toggles `root.expanded` when `Meta+N` is pressed, guaranteeing identical surface appearance and behavior across shortcut and hover triggers.
-- Installer streamlining: eliminate external toggle scripts (`scripts/toggle-nevermore.sh`), desktop entries, and D-Bus shortcut injection; make installer minimal and non-destructive.
+- Eliminate dual-instance split: exactly one plasmoid instance resides in the right autohide panel.
+- Pure popup architecture: `preferredRepresentation: compactRepresentation`, forcing the entire control center to render exclusively within Plasma's native floating dialog (`PlasmaQuick::Dialog`).
+- Native shortcut toggle: `activationTogglesExpanded: true` natively toggles `root.expanded` on `Meta+N`.
+- Zero desktop window shift across shortcut and edge hover activations.
 
-### Phase 3: Theme Tokens and Reusable Components
-- Centralized `Theme.qml` singleton defining system palette tokens, spacing, radiuses, and transition timings.
-- Component library: `Card.qml`, `Gauge.qml`, `IconButton.qml`, and `SectionHeader.qml`.
-- Typography standardization: replace hardcoded font families (`SF Hello`, `SF Mono`) with platform system font fallbacks (`Kirigami.Theme.defaultFont`, monospace font fallback).
+### Phase 3b: Managed Terminal Window, Panel Fix, Consolidation
+- Panel thickness optimization: set right-edge autohide panel to 24 px (Plasma 6 minimum), reducing popup gap to 24 px.
+- Decision record (`docs/spikes/terminal.md`): document rejection of embedded QML terminal and shift to managed external terminal window.
+- Managed external terminal (`scripts/nevermore-term`): launch and control dedicated Konsole window docked to right screen edge (`397 px` width, full available height).
+- Tiling isolation: enforce KWin window rule (Utility type 16) and Krohnkite ignore configuration ensuring 0 px window shift/resize of open applications.
+- Global shortcut: `Meta+Shift+N` (and `nevermore-term toggle`) to slide terminal in and out.
+- Tab rework: replace Run tab with Terminal tab, providing prominent Show/Hide toggle, live status, and background tasks management.
+- Helper streamlining: simplify `nevermore-run` strictly to transient background task submission; eliminate obsolete one-shot runner, base64 args, stop-markers, and PID files.
 
 ### Phase 4: Quick Toggles
 - High-density toggle matrix in the control center header:
@@ -64,7 +57,6 @@ This document outlines the structured development phases and architectural roadm
 
 ## Deferred / Dropped Features
 
-- **Real qmllint with KDE Module Stubs:** In CI runners without KDE Plasma/KF6 packages installed, `qmllint` must run with `--unresolved-type disable --missing-property disable`. Providing offline mock type stubs or dummy `qmldir` modules for `org.kde.*` in CI to enable full semantic verification is slated for a future tooling update.
-- **Embedded PTY Terminal:** Dropped in favor of the lightweight Quick Run runner and external Konsole integration. Full PTY emulation within QML introduces unnecessary complexity, security hazards, and rendering inefficiencies.
+- **Embedded QML Terminal (QMLTermWidget / tmux / xterm.js):** Evaluated and rejected. Embedded QML terminal widgets suffer from Wayland focus routing failures, missing shell capabilities, and cannot host Konsole's QWidget KPart. Managed external window architecture provides 100% native terminal fidelity.
 - **Calendar Reminders & Tasks (Google Calendar Sync):** Deferred pending future Google Calendar synchronization integration; interactive month grid remains purely local.
 - **Weather & Forecast Card:** Deferred pending evaluation of lightweight, zero-key public weather APIs.
